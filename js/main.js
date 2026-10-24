@@ -55,4 +55,11 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
+
+  // Ana ekrana eklenince çevrimdışı da açılsın. file:// ve gömülü sayfalarda (iframe) kaydedilmez.
+  try {
+    if ('serviceWorker' in navigator && window.isSecureContext && window.top === window) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker kaydedilemedi', e)));
+    }
+  } catch (e) { /* çevrimdışı destek olmadan da oyun çalışır */ }
 })();
