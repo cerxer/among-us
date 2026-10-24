@@ -38,6 +38,15 @@ Karakter seçimi: Ana menüdeki robot dizisinden kendi karakterini seç. Hiç se
 
 Geliştirici modu: `http://localhost:8765/?dev=1`. Sol altta görev bitirme, sabotaj başlatma, bekleme süresini sıfırlama, beş mini oyunu doğrudan açma ve zafer tetikleme düğmeleri çıkar. Normal oyunda gizlidir.
 
+## Telefona uygulama olarak ekleme
+
+Oyun yayında: **https://cerxer.github.io/among-us/**
+
+- **iPhone / iPad:** Adresi **Safari** ile aç → alttaki **Paylaş** düğmesi → **Ana Ekrana Ekle** → **Ekle**. Ana ekranda Space Suspects ikonu çıkar; dokununca tam ekran açılır.
+- **Android:** Chrome ile aç → menü (⋮) → **Ana ekrana ekle** / **Uygulamayı yükle**.
+
+İlk açılıştan sonra oyun internet olmadan da çalışır (service worker, `sw.js`). İnternet varken her açılışta en yeni sürüm yüklenir. Oyunu güncellemek için `main` dalına push etmek yeterli; GitHub Pages birkaç dakika içinde yayınlar.
+
 ## Kontroller
 
 | Eylem | Masaüstü | Mobil |
