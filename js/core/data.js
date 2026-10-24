@@ -21,9 +21,9 @@
     KILL_COOLDOWN: 25,
     KILL_COOLDOWN_START: 15,
     TASKS_PER_CREW: 4,
-    IMPOSTORS: 2,
-    DISCUSS_TIME: 25,
-    VOTE_TIME: 25,
+    IMPOSTORS: 3,
+    DISCUSS_TIME: 35,
+    VOTE_TIME: 30,
     RESULT_TIME: 6.5,
     EMERGENCY_COOLDOWN: 15,
     SAB_COOLDOWN: 30,
@@ -33,6 +33,53 @@
     DOOR_COOLDOWN: 25,
     ROLE_REVEAL_TIME: 4,
     FAKE_TASK_TIME: 2.5,
+    BOT_TASK_SCALE: 1.3,       // bot görev sürelerinin çarpanı (15 kişi, her özel rolden 2)
+    IMP_PATIENCE: [3, 8],      // hain botun saldırıdan önce beklediği süre aralığı (denge)
+    ENGINEERS: 2,              // maç başına mühendis sayısı (herkes bilir)
+    ENGINEER_VENT_COOLDOWN: 20,
+    ENGINEER_VENT_COOLDOWN_START: 10,
+    ENGINEER_VENT_MAX: 10,     // havalandırmada kalabileceği en uzun süre
+    DOCTORS: 2,                // maç başına doktor sayısı (herkes bilir)
+    VITALS_BATTERY: 10,        // yaşam belirtileri pil süresi (sn)
+    VITALS_COOLDOWN: 15,       // pil bitince şarj süresi
+    VITALS_TASK_RECHARGE: 5,   // görev başına pile eklenen süre
+    DETECTIVES: 2,             // maç başına dedektif sayısı (herkes bilir)
+    INTERROGATIONS: 3,         // dava başına sorgu hakkı
+    INTERROGATE_RANGE: 46,     // sorgu için temas mesafesi (iki gövde değmeli)
+    INTERROGATE_COOLDOWN: 8,
+    JUDGES: 1,                 // maç başına yargıç sayısı (herkes bilir)
+    JUDGE_USES: 1,             // yargıcın maç boyunca yargılama hakkı
+    JUDGE_EJECT_SEG: 4.2,      // yargı sonrası her atılma animasyonunun süresi
+    GUARDIAN_ANGELS: 5,        // öldüğünde koruyucu melek olan mürettebat sayısı (ayrı hayalet rolü katmanı)
+    PROTECT_DURATION: 10,      // kalkan süresi
+    PROTECT_COOLDOWN: 60,
+    PROTECT_COOLDOWN_START: 10,// melek olunca ilk bekleme
+    PROTECT_RANGE: 110,        // meleğin kalkan verebileceği uzaklık
+    PROTECT_KILL_RESET: 10,    // engellenen saldırıdan sonra hainin bekleme süresi
+    INFLUENCERS: 5,            // öldüğünde influencer olan mürettebat sayısı (ayrı hayalet rolü katmanı, melekle çakışmaz)
+    INFLUENCE_RANGE: 140,      // takip başlatmak için yaşayan birine uzaklık
+    INFLUENCE_COOLDOWN: 20,    // mesaj gönderdikten sonra bekleme
+    INFLUENCE_COOLDOWN_START: 10, // influencer olunca ilk bekleme
+    INFLUENCE_SHOW: 5,         // mesajın alıcının ekranında kalma süresi
+    INFLUENCE_MAX_ICONS: 3,    // bir mesajdaki en fazla resim
+    INFLUENCE_TRUST: 30,       // bot alıcının 'renk + kötü işaret' mesajıyla eklediği şüphe
+    INFLUENCE_CHOICES: 6,      // aynı anda sunulan resim sayısı (yenilemek yarım bekleme cezası verir)
+    TRACKERS: 2,               // maç başına iz sürücü sayısı (herkes bilir)
+    TRACK_RANGE: 74,           // iz cihazı takma mesafesi
+    TRACK_DURATION: 30,        // cihazın çalışma süresi
+    TRACK_COOLDOWN: 15,
+    TRACK_COOLDOWN_START: 10,
+    TRACK_DELAY: 1,            // haritadaki konum bu aralıkla güncellenir
+    PHANTOMS: 1,               // hainlerden kaçının fantom olduğu
+    VANISH_DURATION: 10,       // görünmezlik süresi
+    VANISH_COOLDOWN: 15,
+    VANISH_COOLDOWN_START: 10,
+    VANISH_FADE: 0.8,          // kaybolma / belirme animasyonu (bu sırada görülebilir)
+    SHAPESHIFTERS: 1,          // hainlerden kaçının şekil değiştirici olduğu
+    SHIFT_DURATION: 30,        // kılıkta kalma süresi
+    SHIFT_COOLDOWN: 15,
+    SHIFT_COOLDOWN_START: 10,
+    SHIFT_ANIM: 0.8,           // dönüşüm animasyonu (görülebilir, iz bırakır)
   };
 
   // Her karakterin rengi, Türkçe ek biçimleri ve ayırt edici aksesuarı vardır.
@@ -45,6 +92,13 @@
     { key: 'sari', name: 'Sarı', acc: 'Sarıyı', gen: 'Sarının', abl: 'Sarıdan', color: '#ffd23f', dark: '#bf960c', accessory: 'bowtie', accName: 'Papyon' },
     { key: 'pembe', name: 'Pembe', acc: 'Pembeyi', gen: 'Pembenin', abl: 'Pembeden', color: '#ff7ed8', dark: '#c03d9a', accessory: 'catears', accName: 'Kedi kulakları' },
     { key: 'beyaz', name: 'Beyaz', acc: 'Beyazı', gen: 'Beyazın', abl: 'Beyazdan', color: '#e8eefc', dark: '#949dc4', accessory: 'tophat', accName: 'Silindir şapka' },
+    { key: 'kahve', name: 'Kahve', acc: 'Kahveyi', gen: 'Kahvenin', abl: 'Kahveden', color: '#a0683a', dark: '#5e3a1c', accessory: 'cap', accName: 'Kasket' },
+    { key: 'turkuaz', name: 'Turkuaz', acc: 'Turkuazı', gen: 'Turkuazın', abl: 'Turkuazdan', color: '#33e3d2', dark: '#139488', accessory: 'goggles', accName: 'Kaynak gözlüğü' },
+    { key: 'fistik', name: 'Fıstık', acc: 'Fıstığı', gen: 'Fıstığın', abl: 'Fıstıktan', color: '#b8f03c', dark: '#6f9a12', accessory: 'flower', accName: 'Çiçek' },
+    { key: 'bordo', name: 'Bordo', acc: 'Bordoyu', gen: 'Bordonun', abl: 'Bordodan', color: '#a3244a', dark: '#5e0f27', accessory: 'beret', accName: 'Bere' },
+    { key: 'gri', name: 'Gri', acc: 'Griyi', gen: 'Grinin', abl: 'Griden', color: '#a2a8b8', dark: '#5f6578', accessory: 'mustache', accName: 'Bıyık' },
+    { key: 'lacivert', name: 'Lacivert', acc: 'Laciverti', gen: 'Lacivertin', abl: 'Lacivertten', color: '#3348b8', dark: '#1a2468', accessory: 'scarf', accName: 'Atkı' },
+    { key: 'mercan', name: 'Mercan', acc: 'Mercanı', gen: 'Mercanın', abl: 'Mercandan', color: '#ff8a72', dark: '#c24a35', accessory: 'starclip', accName: 'Yıldız toka' },
   ];
 
   SS.ROOMS = [
@@ -138,4 +192,20 @@
   ];
 
   SS.BUTTON_TILE = { x: 40, y: 11 }; // masanın merkezi (karo köşesi)
+
+  // Influencer resimleri: 15 renk + 8 oda + 33 çıkartma = 56. tone: bir renkle birlikte okununca
+  // 'bad' şüphe, 'good' güven anlamı taşır (botlar mesajı böyle yorumlar).
+  SS.INFLUENCE_ICONS = [].concat(
+    SS.CHARACTERS.map((c, i) => ({ type: 'color', char: i, label: c.name })),
+    SS.ROOMS.map((r, i) => ({ type: 'room', room: i, label: r.name })),
+    [
+      ['knife', '🔪', 'Hain', 'bad'], ['body', '💀', 'Ceset', 'bad'], ['vent', '🕳️', 'Havalandırma', 'bad'], ['liar', '🤥', 'Yalancı', 'bad'],
+      ['warn', '⚠️', 'Tehlike', 'bad'], ['run', '🏃', 'Kaç', 'bad'], ['follow', '👣', 'Peşinde', 'bad'], ['fire', '🔥', 'Sabotaj', 'bad'],
+      ['safe', '🛡️', 'Güvenli', 'good'], ['ok', '✅', 'Temiz', 'good'], ['heart', '❤️', 'Güven', 'good'], ['thumbs', '👍', 'İyi', 'good'],
+      ['no', '❌', 'Hayır'], ['ask', '❓', 'Soru'], ['eye', '👀', 'İzliyorum'], ['alarm', '🚨', 'Toplantı'], ['task', '🔧', 'Görev'],
+      ['light', '💡', 'Işık'], ['dark', '🌑', 'Karanlık'], ['wait', '⏳', 'Bekle'], ['fast', '⚡', 'Acele'], ['here', '📍', 'Burada'],
+      ['there', '👉', 'Orada'], ['up', '⬆️', 'Yukarı'], ['down', '⬇️', 'Aşağı'], ['left', '⬅️', 'Sol'], ['right', '➡️', 'Sağ'],
+      ['together', '👥', 'Birlikte kal'], ['alone', '🚶', 'Yalnız'], ['hide', '🙈', 'Saklan'], ['vote', '🗳️', 'Oy ver'], ['skip', '⏭️', 'Geç'], ['ghost', '👻', 'Hayalet'],
+    ].map(([key, emoji, label, tone]) => ({ type: 'sticker', key, emoji, label, tone: tone || null }))
+  );
 })();

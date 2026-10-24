@@ -21,7 +21,7 @@
       R.resize();
       SS.events.on('matchStart', () => { R.camSnap = true; R.deathFx = null; });
       SS.events.on('meetingEnd', () => { R.camSnap = true; });
-      SS.events.on('kill', e => { if (e.victim.isPlayer) R.deathFx = { t: 0, killer: e.killer, victim: e.victim }; });
+      SS.events.on('kill', e => { if (e.victim.isPlayer) R.deathFx = { t: 0, killer: SS.Game.displayOf(e.killer), victim: e.victim }; });
     },
 
     resize() {
@@ -325,6 +325,7 @@
       R.drawHighlights(ctx, m, p);
       ctx.restore();
       R.drawIndicators(ctx, m, p);
+      R.drawTracker(ctx, m, p);
       if (m.sab.active === 'oxygen' && G.worldActive()) {
         const a = 0.12 + Math.sin(R.t * 6) * 0.08;
         ctx.fillStyle = 'rgba(255,40,60,' + a + ')';
@@ -443,15 +444,28 @@
       ctx.textAlign = 'center';
       for (const c of list) {
         const ghost = !c.alive;
-        SS.Sprites.robot(ctx, c.x, c.y, { def: c.def, facing: c.facing, phase: c.phase, moving: c.moving, t: t + c.id, ghost, busy: c.busyT > 0 });
+        // Fantom: animasyonda saydamlaşır; görünmezken yalnızca görebilenlere soluk çizilir.
+        let alpha = c.sub === 'phantom' ? G.phantomAlpha(c) : 1;
+        if (c.sub === 'phantom' && G.isHidden(c)) alpha = 0.32 + Math.sin(t * 6 + c.id) * 0.06;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const look = G.lookOf(c); // şekil değiştirici: başkasının görünümü ve adı
+        SS.Sprites.robot(ctx, c.x, c.y, { def: look.def, facing: c.facing, phase: c.phase, moving: c.moving, t: t + c.id, ghost, busy: c.busyT > 0, wings: ghost && c.angel });
+        if (c.shieldT > 0 && !p.alive) { // kalkanı yalnızca melek ve hayaletler görür
+          ctx.strokeStyle = 'rgba(255,226,90,' + (0.55 + Math.sin(t * 5) * 0.25) + ')'; ctx.lineWidth = 3;
+          ctx.fillStyle = 'rgba(255,226,90,0.08)';
+          ctx.beginPath(); ctx.arc(c.x, c.y - 20, 30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
         const mate = p.role === 'impostor' && c.role === 'impostor' && c !== p;
         ctx.font = '800 13px system-ui, sans-serif';
         ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(5,6,20,0.85)';
         const ny = c.y - (ghost ? 66 : 58);
-        ctx.strokeText(c.name, c.x, ny);
+        ctx.strokeText(look.name, c.x, ny);
         ctx.fillStyle = mate ? '#ff6b7a' : (c === p ? '#ffffff' : '#dfe6ff');
-        ctx.fillText(c.name, c.x, ny);
-        if (mate) { ctx.font = '800 10px system-ui'; ctx.strokeText('HAİN', c.x, ny - 13); ctx.fillText('HAİN', c.x, ny - 13); }
+        ctx.fillText(look.name, c.x, ny);
+        if (ghost && c.influencer) { ctx.font = '16px system-ui'; ctx.fillText('📱', c.x + 26, ny + 2); } // influencer hayaleti
+        if (mate) { ctx.font = '800 10px system-ui'; const tag = c.sub === 'phantom' ? 'HAİN · FANTOM' : c.sub === 'shapeshifter' ? (look !== c ? 'HAİN · asıl ' + c.name : 'HAİN · ŞEKİL DEĞ.') : 'HAİN'; ctx.strokeText(tag, c.x, ny - 13); ctx.fillText(tag, c.x, ny - 13); }
+        ctx.restore();
       }
     },
 
@@ -472,6 +486,24 @@
           ctx.closePath(); ctx.fill(); ctx.stroke();
           ctx.fillStyle = '#ff4f60'; ctx.font = '900 18px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText('BONK!', 0, 1);
+          ctx.restore();
+        } else if (e.type === 'shield') {
+          // engellenen saldırı: altın kalkan parlaması
+          ctx.save();
+          ctx.globalAlpha = 1 - k;
+          ctx.strokeStyle = '#ffe36b'; ctx.lineWidth = 6;
+          ctx.fillStyle = 'rgba(255,226,90,0.25)';
+          ctx.beginPath(); ctx.arc(e.x, e.y, 26 + k * 18, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.restore();
+        } else if (e.type === 'shimmer') {
+          // kaybolma/belirme pırıltısı
+          ctx.save();
+          ctx.globalAlpha = 1 - k;
+          ctx.strokeStyle = e.color; ctx.lineWidth = 3;
+          for (let i = 0; i < 8; i++) {
+            const a = i / 8 * Math.PI * 2 + k * 2, r1 = 14 + k * 26, r2 = r1 + 8;
+            ctx.beginPath(); ctx.moveTo(e.x + Math.cos(a) * r1, e.y + Math.sin(a) * r1); ctx.lineTo(e.x + Math.cos(a) * r2, e.y + Math.sin(a) * r2); ctx.stroke();
+          }
           ctx.restore();
         } else if (e.type === 'puff') {
           ctx.fillStyle = 'rgba(190,200,240,' + (0.6 * (1 - k)) + ')';
@@ -538,11 +570,12 @@
         ctx.strokeStyle = 'rgba(255,226,90,' + (0.7 + Math.sin(t * 7) * 0.3) + ')'; ctx.lineWidth = 5;
         ctx.beginPath(); ctx.arc(M.button.x, M.button.y, 32, 0, Math.PI * 2); ctx.stroke();
       }
-      if (p.role === 'impostor' && p.alive) {
+      if (G.canVent(p)) {
+        const rgb = p.role === 'impostor' ? '255,90,110' : '95,216,255';
         M.vents.forEach(v => {
           if (!R.inView(v.x, v.y, 60)) return;
           const strong = (target && target.kind === 'vent' && target.vent === v) || p.inVent === v.id;
-          ctx.strokeStyle = strong ? 'rgba(255,90,110,' + (0.7 + Math.sin(t * 7) * 0.3) + ')' : 'rgba(255,90,110,0.3)';
+          ctx.strokeStyle = strong ? 'rgba(' + rgb + ',' + (0.7 + Math.sin(t * 7) * 0.3) + ')' : 'rgba(' + rgb + ',0.3)';
           ctx.lineWidth = strong ? 4 : 2;
           SS.Sprites.rr(ctx, v.x - 22, v.y - 17, 44, 34, 7); ctx.stroke();
         });
@@ -555,7 +588,7 @@
             ctx.save();
             ctx.translate(cur.x + Math.cos(a) * d, cur.y + Math.sin(a) * d);
             ctx.rotate(a);
-            ctx.fillStyle = '#ff6b7a'; ctx.strokeStyle = INK; ctx.lineWidth = 3;
+            ctx.fillStyle = 'rgb(' + rgb + ')'; ctx.strokeStyle = INK; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-8, -13); ctx.lineTo(-8, 13); ctx.closePath(); ctx.fill(); ctx.stroke();
             ctx.restore();
           });
@@ -570,6 +603,34 @@
     },
 
     // Ekran dışındaki sabotaj panellerine ok
+    // İz sürücü: izlenen kişinin gecikmeli konumu (ekran dışındaysa kenarda renkli ok, içindeyse halka).
+    drawTracker(ctx, m, p) {
+      if (!p.track || !SS.Game.worldActive()) return;
+      const tr = p.track, tc = m.chars[tr.id], s = R.scale;
+      const sx = (tr.x - R.cam.x) * s, sy = (tr.y - R.cam.y) * s;
+      const col = tr.lost ? '#8a90b8' : tc.def.color;
+      if (sx > 30 && sy > 30 && sx < R.w - 30 && sy < R.h - 30) {
+        ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.setLineDash([6, 6]);
+        ctx.beginPath(); ctx.arc(sx, sy - 20 * s, 26 * s + Math.sin(R.t * 5) * 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
+      const cx = R.w / 2, cy = R.h / 2, a = Math.atan2(sy - cy, sx - cx);
+      const mx = R.w / 2 - 60, my = R.h / 2 - 110;
+      const f = Math.min(Math.abs(mx / Math.cos(a)), Math.abs(my / Math.sin(a)));
+      const x = cx + Math.cos(a) * f, y = cy + Math.sin(a) * f;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = col; ctx.strokeStyle = '#080a1c'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.rotate(a);
+      ctx.beginPath(); ctx.moveTo(28, 0); ctx.lineTo(15, -9); ctx.lineTo(15, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#fff'; ctx.font = '800 11px system-ui'; ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(5,6,20,.9)'; ctx.lineWidth = 3;
+      ctx.strokeText(tc.name, x, y + 30); ctx.fillText(tc.name, x, y + 30);
+    },
+
     drawIndicators(ctx, m, p) {
       if (!SS.Game.worldActive() || !p.alive) return;
       const M = SS.Map, s = R.scale;

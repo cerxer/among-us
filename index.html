@@ -11,10 +11,11 @@
   // Başlangıç hatası boş ekran yerine anlaşılır bir mesajla gösterilir.
   window.__ssFatal = function (msg) {
     var el = document.getElementById('fatal');
-    if (!el) { alert('Space Suspects başlatılamadı: ' + msg); return; }
+    if (!el) { console.error(msg); if (document.body) document.body.textContent = 'Space Suspects başlatılamadı: ' + msg; return; }
     document.getElementById('fatalMsg').textContent = msg;
     el.classList.remove('hidden');
   };
+  document.addEventListener('click', function (e) { if (e.target && e.target.id === 'btnReload') location.reload(); });
   window.addEventListener('error', function (e) {
     if (!window.__ssBooted) window.__ssFatal((e && e.message) || 'Bilinmeyen hata');
     else console.error(e.error || e.message);
@@ -42,6 +43,10 @@
     </aside>
 
     <div id="topRight">
+      <button id="btnCase" class="icon-btn hidden" title="Dava dosyası (N)">
+        <svg viewBox="0 0 24 24"><path d="M4 4h11l5 5v11H4z M15 4v5h5 M8 13h8 M8 17h6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>
+        <span>Dava</span>
+      </button>
       <button id="btnMap" class="icon-btn" title="Harita (Tab / M)">
         <svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>
         <span>Harita</span>
@@ -58,9 +63,29 @@
 
     <div id="ventBar" class="hidden"></div>
 
+    <!-- Influencer: alıcının ekranında açılan resimli mesaj ve ölü influencer'ın mesaj paneli -->
+    <div id="inflPop" class="hidden" role="status" aria-live="polite"><small>Bir hayalet sana resim gönderdi</small><div id="inflPopIcons" class="infl-icons"></div></div>
+    <div id="inflPanel" class="hidden">
+      <div class="infl-head"><b id="inflTarget">Takip</b><span id="inflCd"></span></div>
+      <div id="inflChoices" class="infl-choices"></div>
+      <div class="infl-foot">
+        <div id="inflSlots" class="infl-slots"></div>
+        <button id="inflRefresh" class="btn small" title="Yeni resimler (yarım bekleme cezası)">↻ Yenile</button>
+        <button id="inflSend" class="btn small primary">Gönder</button>
+      </div>
+    </div>
+
     <div id="joyZone"><div id="joyBase"><div id="joyKnob"></div></div></div>
 
     <div id="actions">
+      <button id="btnShift" class="act act-shift hidden" data-key="H">
+        <svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="4" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="16" cy="15" r="4" fill="currentColor"/><path d="M14 4h5v5M10 20H5v-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <b>Dönüş</b><small class="why"></small><i class="key">H</i>
+      </button>
+      <button id="btnVanish" class="act act-vanish hidden" data-key="G">
+        <svg viewBox="0 0 24 24"><path d="M12 3c-4 0-7 3-7 7v10l2.5-2 2 2 2.5-2 2.5 2 2-2 2.5 2V10c0-4-3-7-7-7z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="3 2.2"/><circle cx="9.5" cy="10" r="1.6" fill="currentColor"/><circle cx="14.5" cy="10" r="1.6" fill="currentColor"/></svg>
+        <b>Kaybol</b><small class="why"></small><i class="key">G</i>
+      </button>
       <button id="btnSab" class="act act-sab hidden" data-key="F">
         <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" fill="currentColor"/></svg>
         <b>Sabotaj</b><small class="why"></small><i class="key">F</i>
@@ -68,6 +93,26 @@
       <button id="btnKill" class="act act-kill hidden" data-key="Q">
         <svg viewBox="0 0 24 24"><path d="M12 2l2.4 6.2L21 9l-5 4.3L17.5 20 12 16.6 6.5 20 8 13.3 3 9l6.6-.8z" fill="currentColor"/></svg>
         <b>Saldır</b><small class="why"></small><i class="key">Q</i><em class="cd"></em>
+      </button>
+      <button id="btnProtect" class="act act-protect hidden" data-key="P">
+        <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M8 12l3 3 5-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <b>Koru</b><small class="why"></small><i class="key">P</i>
+      </button>
+      <button id="btnInfluence" class="act act-infl hidden" data-key="O">
+        <svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9.5 9.5a1.2 1.2 0 1 0 0 .1M14.5 9.5a1.2 1.2 0 1 0 0 .1M9 13.5c1.6 1.8 4.4 1.8 6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.5 18.5h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <b>Takip</b><small class="why"></small><i class="key">O</i>
+      </button>
+      <button id="btnTrack" class="act act-track hidden" data-key="T">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <b>İz sür</b><small class="why"></small><i class="key">T</i>
+      </button>
+      <button id="btnInterrogate" class="act act-int hidden" data-key="I">
+        <svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M14.5 14.5L21 21" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        <b>Sorgula</b><small class="why"></small><i class="key">I</i>
+      </button>
+      <button id="btnVitals" class="act act-vitals hidden" data-key="V">
+        <svg viewBox="0 0 24 24"><path d="M2 12h4l2.5-6 4 12 3-9 2 3H22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <b>Yaşam</b><small class="why"></small><i class="key">V</i>
       </button>
       <button id="btnReport" class="act act-report" data-key="R">
         <svg viewBox="0 0 24 24"><path d="M3 10v4h3l6 4V6L6 10zM15 8.5a4.5 4.5 0 0 1 0 7M17.5 6a8 8 0 0 1 0 12" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -81,11 +126,12 @@
   </div>
 
   <!-- ===================== ANA MENÜ ===================== -->
-  <section id="menu" class="screen">
+  <section id="menu" class="screen scroll">
     <div class="menu-card">
-      <canvas id="menuArt" width="640" height="190"></canvas>
       <h1 class="logo"><span class="l1">SPACE</span><span class="l2">SUSPECTS</span></h1>
       <p class="tagline">Görevleri bitir. Hainleri bul. Kimseye tam güvenme.</p>
+      <div class="char-head"><span>Karakterin</span><b id="charName"></b></div>
+      <div id="charPick" class="char-pick" role="radiogroup" aria-label="Karakterini seç"></div>
       <button id="btnStart" class="btn primary big">Oyuna Başla</button>
       <div class="row">
         <button id="btnHowto" class="btn">Nasıl Oynanır</button>
@@ -96,10 +142,19 @@
         <div class="seg" id="rolePref" role="radiogroup">
           <button data-role="random" class="on" role="radio" aria-checked="true">Rastgele</button>
           <button data-role="crew" role="radio" aria-checked="false">Mürettebat</button>
+          <button data-role="engineer" role="radio" aria-checked="false">Mühendis</button>
+          <button data-role="doctor" role="radio" aria-checked="false">Doktor</button>
+          <button data-role="detective" role="radio" aria-checked="false">Dedektif</button>
+          <button data-role="tracker" role="radio" aria-checked="false">İz Sürücü</button>
+          <button data-role="judge" role="radio" aria-checked="false">Yargıç</button>
+          <button data-role="angel" role="radio" aria-checked="false">Koruyucu Melek</button>
+          <button data-role="influencer" role="radio" aria-checked="false">Influencer</button>
           <button data-role="impostor" role="radio" aria-checked="false">Hain</button>
+          <button data-role="phantom" role="radio" aria-checked="false">Fantom</button>
+          <button data-role="shapeshifter" role="radio" aria-checked="false">Şekil Değiştirici</button>
         </div>
       </div>
-      <p class="fine">Tek oyunculu · 7 bot · 6 mürettebat, 2 hain</p>
+      <p class="fine">Tek oyunculu · 14 bot · 12 mürettebat (9'u özel rollü; 5'i koruyucu melek, 5'i influencer), 3 hain (fantom ve şekil değiştirici dahil)</p>
     </div>
   </section>
 
@@ -110,7 +165,16 @@
       <div class="howto-body scroll">
         <h3>Amaç</h3>
         <p><b class="c-crew">Mürettebat</b>: 4 görevini tamamla, cesetleri rapor et ve toplantıda hainleri oylayarak istasyondan çıkar. Ortak görev çubuğu dolarsa ya da bütün hainler elenirse mürettebat kazanır.</p>
+        <p><b class="c-crew">Mühendis</b>: Her maçta mürettebattan ikisi mühendistir; kim olduğu gizlidir. Görevlerini yapar ve hainler gibi havalandırmaları kullanabilir. İçeride en fazla 10 saniye kalır, çıktıktan sonra 20 saniye bekler. Saldıramaz, sabotaj yapamaz. Havalandırmaya giren birini görmek bu yüzden kesin kanıt değildir.</p>
+        <p><b class="c-crew">Doktor</b>: Her maçta mürettebattan ikisi doktordur; kim olduğu gizlidir. Yaşam belirtileri ekranını haritanın her yerinden açıp kimin hayatta, kimin ölü olduğunu görür. Pil 10 saniye sürer, bitince 15 saniye şarj olur; her tamamlanan görev pile 5 saniye ekler. Ekran açıkken yürüyemezsin.</p>
+        <p><b class="c-crew">Dedektif</b>: Her maçta mürettebattan ikisi dedektiftir; kim olduğu gizlidir. Bir ceset rapor edilince dava açılır. Dedektif bir karaktere temas edecek kadar yaklaşıp onu sorgular ve cinayet anında hangi odada olduğunu öğrenir. Dava başına 3 sorgu hakkı vardır; aynı anda yalnızca en son dava sorgulanabilir. Dava dosyasında cesedin yeri, sorgu sonuçları ve şüpheli listen tutulur. Bulgularını toplantıda paylaşabilirsin.</p>
+        <p><b class="c-crew">İz Sürücü</b>: Her maçta mürettebattan ikisi iz sürücüdür; kim olduğu gizlidir. Yakınındaki birine iz cihazı takar; o kişinin konumu 30 saniye boyunca haritada ve ekran kenarındaki okta görünür. Konum her saniye güncellenir, yani biraz gecikmelidir. İzi istediğin an bırakabilirsin; ardından 15 saniye bekleme olur. Toplantı başlayınca iz biter.</p>
+        <p><b class="c-crew">Yargıç</b>: Her maçta mürettebattan biri yargıçtır; kim olduğu gizlidir. Toplantıda (tartışma ya da oylama sırasında) maç boyunca bir kez birini yargılayıp atabilir. Yargı anında oylama biter. Atılan kişi hainse yalnızca o uzaya atılır. Hain değilse önce o, ardından yargıcın kendisi de uzaya atılır. Atılanların hain olup olmadığı ekranda yazılır. İyi düşün: yanlış kişiyi atarsan mürettebat iki kişi kaybeder.</p>
+        <p><b class="c-crew">Koruyucu Melek</b>: Mürettebattan 5 kişi öldüğünde koruyucu melek olur; bunların bazıları özel rollüdür (ör. mühendis olup öldükten sonra melek olabilir). Hayalet olarak yakınındaki yaşayan birine 10 saniyelik kalkan verebilir (P); kalkanlı kişiye yapılan saldırı başarısız olur ve hain 10 saniye bekler. Kalkanı yalnızca melek ve hayaletler görür. Ardından 60 saniye bekleme olur; toplantı kalkanları kaldırır.</p>
+        <p><b class="c-crew">Influencer</b>: Mürettebattan 5 kişi (meleklerden farklı kişiler; çoğu özel rollü) öldüğünde ya da atıldığında influencer olur. Hayalet olarak yakınındaki yaşayan birini takip eder (O) ve ona aynı anda en fazla 3 resimden oluşan mesaj gönderir. 56 resim (renkler, odalar, çıkartmalar) arasından her seferinde 6 tanesi sunulur; yenilemek yarım bekleme süresi (10 sn) cezası verir. Mesaj alıcının ekranında 5 saniye kalır; renk, yer ya da hain hakkında ipucu verir. Göndermeden sonra 20 saniye bekleme olur; toplantı takibi bitirir.</p>
         <p><b class="c-imp">Hain</b>: Kimliğini gizle, sahte görev yap, tanık yokken mürettebatı devre dışı bırak, sabotajla kafa karıştır. Hain sayısı mürettebata eşitlenirse ya da oksijen süresi dolarsa hainler kazanır.</p>
+        <p><b class="c-imp">Fantom</b>: Hainlerden biri fantomdur. 10 saniyeliğine görünmez olabilir (G); bu sırada yaşayan mürettebat onu göremez, diğer hain ve hayaletler görebilir. Görünmezken saldıramaz, havalandırma, rapor ve buton kullanamaz. Kaybolma ve belirme anı görülebilir; birinin gözü önünde kaybolmak seni ele verir. Ardından 15 saniye bekleme olur.</p>
+        <p><b class="c-imp">Şekil Değiştirici</b>: Hainlerden biri şekil değiştiricidir. Yaşayan birinin kılığına 30 saniyeliğine girebilir (H); başkaları onu o kişi olarak görür, adı da değişir. Kılıktayken saldırabilir ve havalandırma kullanabilir; böylece cinayeti başkasının üstüne atabilir. Dönüşüm anı görülebilir ve onu ele verir. İstediği an kendi hâline döner; ardından 15 saniye bekleme olur. Toplantılarda herkes kendi hâliyle görünür.</p>
         <h3>Masaüstü</h3>
         <ul class="keys">
           <li><kbd>W A S D</kbd> / <kbd>Yön tuşları</kbd> Hareket</li>
@@ -118,8 +182,15 @@
           <li><kbd>R</kbd> Yakındaki cesedi rapor et</li>
           <li><kbd>Q</kbd> Saldır (hain)</li>
           <li><kbd>F</kbd> Sabotaj paneli (hain)</li>
+          <li><kbd>V</kbd> Yaşam belirtileri (doktor)</li>
+          <li><kbd>I</kbd> Sorgula, <kbd>N</kbd> Dava dosyası (dedektif)</li>
+          <li><kbd>T</kbd> İz cihazı tak / bırak (iz sürücü)</li>
+          <li><kbd>G</kbd> Kaybol / görün (fantom)</li>
+          <li><kbd>H</kbd> Kılık değiştir / geri dön (şekil değiştirici)</li>
+          <li><kbd>P</kbd> Kalkan ver (koruyucu melek, hayaletken)</li>
+          <li><kbd>O</kbd> Takip et / bırak; resimleri panelden seç ve gönder (influencer, hayaletken)</li>
           <li><kbd>Tab</kbd> / <kbd>M</kbd> Harita</li>
-          <li><kbd>1</kbd> <kbd>2</kbd> Havalandırmada bağlı çıkışa geç</li>
+          <li><kbd>1</kbd> <kbd>2</kbd> Havalandırmada bağlı çıkışa geç (hain, mühendis)</li>
           <li><kbd>Esc</kbd> Paneli kapat / duraklat</li>
         </ul>
         <h3>Mobil</h3>
@@ -186,6 +257,34 @@
     </div>
   </section>
 
+  <!-- ===================== YAŞAM BELİRTİLERİ (doktor) ===================== -->
+  <section id="vitalsModal" class="screen modal hidden">
+    <div class="panel vitals-panel">
+      <header><h3>Yaşam Belirtileri</h3><button class="close-btn" data-close="vitals" aria-label="Kapat">✕</button></header>
+      <div class="battery" aria-label="Pil"><div id="vitalsBattery"></div><span id="vitalsBatteryTxt"></span></div>
+      <div id="vitalsGrid" class="vitals-grid"></div>
+      <p class="vitals-note">Ekran konum göstermez. Açıkken yürüyemezsin.</p>
+    </div>
+  </section>
+
+  <!-- ===================== DAVA DOSYASI (dedektif) ===================== -->
+  <section id="caseModal" class="screen modal hidden">
+    <div class="panel case-panel">
+      <header><h3>Dava Dosyası</h3><button class="close-btn" data-close="case" aria-label="Kapat">✕</button></header>
+      <div id="caseTabs" class="case-tabs"></div>
+      <div id="caseBody" class="case-body scroll"></div>
+    </div>
+  </section>
+
+  <!-- ===================== KILIK SEÇİMİ (şekil değiştirici) ===================== -->
+  <section id="shiftModal" class="screen modal hidden">
+    <div class="panel shift-panel">
+      <header><h3>Kimin kılığına gireceksin?</h3><button class="close-btn" data-close="shift" aria-label="Kapat">✕</button></header>
+      <div id="shiftGrid" class="shift-grid scroll"></div>
+      <p class="vitals-note">Dönüşüm anını gören biri seni ele verebilir. Kimse bakmıyorken dönüş.</p>
+    </div>
+  </section>
+
   <!-- ===================== SABOTAJ ===================== -->
   <section id="sabModal" class="screen modal hidden">
     <div class="panel sab-panel">
@@ -228,7 +327,7 @@
     <div class="panel">
       <h2>Oyun başlatılamadı</h2>
       <p id="fatalMsg"></p>
-      <button class="btn primary" onclick="location.reload()">Sayfayı yenile</button>
+      <button id="btnReload" class="btn primary">Sayfayı yenile</button>
     </div>
   </section>
 </div>

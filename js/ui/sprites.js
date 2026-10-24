@@ -74,6 +74,55 @@
         ctx.fillStyle = '#ff4f60';
         ctx.fillRect(-7, top - 5, 14, 3);
         break;
+      case 'cap': // kasket: siperlik bakılan yöne
+        ctx.fillStyle = '#e9d7a8';
+        ctx.beginPath(); ctx.arc(0, top + 4, 12, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+        rr(ctx, f > 0 ? 2 : -18, top + 1, 16, 5, 2.5); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#c8a86a'; ctx.beginPath(); ctx.arc(0, top - 7, 2.5, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'goggles': // kaynak gözlüğü alnın üstünde
+        ctx.fillStyle = '#4b4f6b';
+        rr(ctx, -14, top + 1, 28, 5, 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffb13d';
+        [-6, 6].forEach(dx => { ctx.beginPath(); ctx.arc(dx, top + 2, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        [-7.5, 4.5].forEach(dx => ctx.fillRect(dx, top, 2.5, 2));
+        break;
+      case 'flower': // tepede papatya
+        ctx.beginPath(); ctx.moveTo(f * 4, top + 1); ctx.lineTo(f * 6, top - 6); ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 6; i++) {
+          const a = i / 6 * Math.PI * 2;
+          ctx.beginPath(); ctx.ellipse(f * 6 + Math.cos(a) * 5, top - 9 + Math.sin(a) * 5, 3.5, 2.5, a, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+        ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(f * 6, top - 9, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        break;
+      case 'beret': // yana yatık bere
+        ctx.fillStyle = '#2b2f55';
+        ctx.beginPath(); ctx.ellipse(-f * 3, top + 1, 14, 6, -f * 0.25, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-f * 3, top - 5); ctx.lineTo(-f * 3, top - 9); ctx.stroke();
+        break;
+      case 'mustache': // vizörün altında bıyık
+        ctx.fillStyle = '#2b1d12';
+        [-1, 1].forEach(s => {
+          ctx.beginPath(); ctx.ellipse(f * 3 + s * 5, top + 21, 5.5, 2.6, s * 0.35, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        });
+        break;
+      case 'scarf': // boyunda atkı, ucu arkaya sarkar
+        ctx.fillStyle = '#ffd23f';
+        rr(ctx, -15, top + 19, 30, 6, 3); ctx.fill(); ctx.stroke();
+        rr(ctx, -f * 13 - 3, top + 22, 6, 12, 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ff4f60'; ctx.fillRect(-9, top + 20, 3, 4); ctx.fillRect(3, top + 20, 3, 4);
+        break;
+      case 'starclip': // başın yanında yıldız toka
+        ctx.fillStyle = '#ffe36b';
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 2.8 : 6.5;
+          ctx.lineTo(-f * 9 + Math.cos(a) * r, top + 1 + Math.sin(a) * r);
+        }
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        break;
     }
   }
 
@@ -153,6 +202,18 @@
       if (o.ghost) {
         ctx.strokeStyle = 'rgba(255,240,150,0.9)'; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.ellipse(0, top - 10, 10, 3.5, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (o.wings) { // koruyucu melek: çırpınan beyaz kanatlar
+        const flap = Math.sin(t * 6) * 0.25;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
+        [-1, 1].forEach(sd => {
+          ctx.save();
+          ctx.translate(sd * 13, top + 14);
+          ctx.rotate(sd * (0.35 + flap));
+          ctx.beginPath(); ctx.ellipse(sd * 9, 0, 11, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.ellipse(sd * 6, 7, 8, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.restore();
+        });
       }
       if (o.busy && !o.dead) {
         // görev yaparken dönen küçük dişli (sahte ya da gerçek ayırt edilemez)

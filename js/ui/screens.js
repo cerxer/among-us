@@ -34,20 +34,27 @@
         try { localStorage.setItem('ss_role', b.dataset.role); } catch (e) { /* önemli değil */ }
         S.syncRolePref();
       }));
-      try { const r = localStorage.getItem('ss_role'); if (r === 'crew' || r === 'impostor' || r === 'random') G.settings.rolePref = r; } catch (e) { /* önemli değil */ }
+      try { const r = localStorage.getItem('ss_role'); if (['crew', 'engineer', 'doctor', 'detective', 'tracker', 'judge', 'angel', 'influencer', 'impostor', 'phantom', 'shapeshifter', 'random'].indexOf(r) >= 0) G.settings.rolePref = r; } catch (e) { /* önemli değil */ }
       S.syncRolePref();
       S.syncMute();
+      S.buildCharPick();
 
       SS.events.on('state', e => {
         if (e.to === 'ROLE_REVEAL') S.showReveal();
         if (e.to === 'PAUSED') $('pauseInfo').textContent = S.focusPause ? 'Sekme arka plana alındığı için maç duraklatıldı.' : 'Maç süresi ve bekleme süreleri durdu.';
         if (e.to !== 'PAUSED') S.focusPause = false;
-        S.pick = null;
+        S.pick = null; S.judgeSel = null;
         if (e.to === 'MEETING_VOTE') S.selected = null;
       });
       SS.events.on('meetingStart', mt => S.buildMeeting(mt));
       SS.events.on('meetingMessage', msg => S.addMsg(msg));
       SS.events.on('meetingVote', () => S.sysMsg('Tartışma bitti. Oylama başladı!'));
+      SS.events.on('judge', r => {
+        S.sysMsg(r.guilty
+          ? '⚖ Yargıç ' + r.judge.name + ', ' + r.target.def.acc + ' attı: ' + r.target.name + ' bir HAİNDİ ve elendi!'
+          : '⚖ Yargıç ' + r.judge.name + ', ' + r.target.def.acc + ' attı ama ' + r.target.name + ' hain değildi. İkisi de elendi.');
+        S.pick = null; S.judgeSel = null; S.cache.act = null;
+      });
       SS.events.on('meetingResult', mt => S.showTally(mt));
       SS.events.on('gameOver', e => S.showGameOver(e));
       S.ejectCanvas = $('ejectCanvas');
@@ -58,7 +65,7 @@
     start() {
       S.howtoOpen = false;
       SS.HUD.closePanels();
-      SS.Game.startGame({ rolePref: SS.Game.settings.rolePref });
+      SS.Game.startGame({ rolePref: SS.Game.settings.rolePref, charKey: SS.Game.settings.charKey });
     },
     resume() { S.howtoOpen = false; SS.Game.resume(); },
     openHowto() { S.howtoOpen = true; },
@@ -79,8 +86,9 @@
       const paused = st === 'PAUSED';
       const under = paused ? prev : st;
       const mt = m && (m.meeting || m.lastMeeting);
-      const inMeeting = under === 'MEETING_DISCUSSION' || under === 'MEETING_VOTE' || (under === 'MEETING_RESULT' && mt && mt.resultT < EJECT_AT);
-      const inEject = under === 'MEETING_RESULT' && mt && mt.resultT >= EJECT_AT;
+      const ejAt = mt && mt.ejectAt !== undefined ? mt.ejectAt : EJECT_AT;
+      const inMeeting = under === 'MEETING_DISCUSSION' || under === 'MEETING_VOTE' || (under === 'MEETING_RESULT' && mt && mt.resultT < ejAt);
+      const inEject = under === 'MEETING_RESULT' && mt && mt.resultT >= ejAt;
       S.vis(S.el.menu, st === 'MENU');
       S.vis(S.el.howto, S.howtoOpen && (st === 'MENU' || st === 'PAUSED'));
       S.vis(S.el.reveal, under === 'ROLE_REVEAL');
@@ -88,30 +96,77 @@
       S.vis(S.el.eject, !!inEject);
       S.vis(S.el.pause, paused && !S.howtoOpen);
       S.vis(S.el.over, st === 'GAME_OVER');
-      if (st === 'MENU') S.drawMenuArt();
+      if (st === 'MENU') S.drawCharPick();
       if (inMeeting && m.meeting) S.updateMeeting(m, m.meeting);
       if (inEject) S.drawEject(m, mt, dt, !paused);
     },
 
     // ------------------------------------------------------------ menü & rol ekranı
-    drawMenuArt() {
-      const c = $('menuArt'), g = c.getContext('2d'), t = performance.now() / 1000;
-      g.clearRect(0, 0, c.width, c.height);
-      SS.CHARACTERS.forEach((d, i) => {
-        const x = 50 + i * 77, y = 160 + Math.sin(t * 2 + i) * 6;
-        SS.Sprites.robot(g, x, y, { def: d, facing: i < 4 ? 1 : -1, t: t + i, moving: true, phase: t * 6 + i, scale: 1.25 });
+    // Karakter seçici: menüdeki robot dizisi; seçili robot yürür, diğerleri bekler.
+    buildCharPick() {
+      const G = SS.Game, box = $('charPick');
+      try {
+        const k = localStorage.getItem('ss_char');
+        if (SS.CHARACTERS.some(d => d.key === k)) G.settings.charKey = k;
+      } catch (e) { /* önemli değil */ }
+      box.innerHTML = '';
+      S.charCanvases = SS.CHARACTERS.map(d => {
+        const b = document.createElement('button');
+        b.className = 'char-opt';
+        b.dataset.key = d.key;
+        b.setAttribute('role', 'radio');
+        b.title = d.name + ' — ' + d.accName;
+        const cv = document.createElement('canvas');
+        cv.width = 120; cv.height = 132;
+        const nm = document.createElement('span');
+        nm.textContent = d.name;
+        nm.style.color = d.color;
+        b.appendChild(cv); b.appendChild(nm);
+        b.addEventListener('click', () => {
+          SS.Audio.unlock(); SS.Audio.click();
+          G.settings.charKey = d.key;
+          try { localStorage.setItem('ss_char', d.key); } catch (e) { /* önemli değil */ }
+          S.syncCharPick();
+          b.blur();
+        });
+        box.appendChild(b);
+        return { def: d, cv, b };
+      });
+      S.syncCharPick();
+    },
+    syncCharPick() {
+      const key = SS.Game.settings.charKey;
+      S.charCanvases.forEach(o => {
+        const on = o.def.key === key;
+        o.b.classList.toggle('on', on);
+        o.b.setAttribute('aria-checked', on ? 'true' : 'false');
+        if (on) $('charName').innerHTML = '<span style="color:' + o.def.color + '">' + esc(o.def.name) + '</span> · ' + esc(o.def.accName);
+      });
+    },
+    drawCharPick() {
+      const t = performance.now() / 1000, key = SS.Game.settings.charKey;
+      S.charCanvases.forEach((o, i) => {
+        const g = o.cv.getContext('2d'), on = o.def.key === key;
+        g.clearRect(0, 0, o.cv.width, o.cv.height);
+        if (on) {
+          const gr = g.createRadialGradient(60, 118, 4, 60, 118, 54);
+          gr.addColorStop(0, 'rgba(255,226,90,0.45)'); gr.addColorStop(1, 'rgba(255,226,90,0)');
+          g.fillStyle = gr; g.fillRect(0, 60, 120, 72);
+        }
+        SS.Sprites.robot(g, 60, 118 + (on ? Math.sin(t * 4) * 2 : 0), { def: o.def, facing: i < 4 ? 1 : -1, t: t + i, moving: on, phase: t * 8, scale: 2 });
       });
     },
 
     showReveal() {
       const G = SS.Game, m = G.match, p = G.player();
       const role = $('revealRole');
-      role.textContent = p.role === 'crew' ? 'MÜRETTEBAT' : 'HAİN';
+      const eng = p.sub === 'engineer', doc = p.sub === 'doctor', det = p.sub === 'detective', trk = p.sub === 'tracker', jdg = p.sub === 'judge', ang = !!p.angel, inf = !!p.influencer;
+      role.textContent = p.role === 'crew' ? (eng ? 'MÜHENDİS' : doc ? 'DOKTOR' : det ? 'DEDEKTİF' : trk ? 'İZ SÜRÜCÜ' : jdg ? 'YARGIÇ' : ang ? 'KORUYUCU MELEK' : inf ? 'INFLUENCER' : 'MÜRETTEBAT') : (p.sub === 'phantom' ? 'FANTOM' : p.sub === 'shapeshifter' ? 'ŞEKİL DEĞİŞTİRİCİ' : 'HAİN');
       role.className = p.role;
       const mates = m.chars.filter(c => c.role === 'impostor' && c !== p);
       $('revealDesc').innerHTML = p.role === 'crew'
-        ? 'Karakterin: <b style="color:' + p.def.color + '">' + esc(p.name) + '</b> (' + esc(p.def.accName) + '). Aranızda <b class="c-imp">2 hain</b> var. Görevlerini tamamla ve hainleri bul.'
-        : 'Karakterin: <b style="color:' + p.def.color + '">' + esc(p.name) + '</b>. Takım arkadaşın: <b class="c-imp">' + mates.map(c => esc(c.name)).join(', ') + '</b>. Fark edilmeden mürettebatı devre dışı bırak.';
+        ? 'Karakterin: <b style="color:' + p.def.color + '">' + esc(p.name) + '</b> (' + esc(p.def.accName) + '). Aranızda <b class="c-imp">' + SS.C.IMPOSTORS + ' hain</b> var. Görevlerini tamamla ve hainleri bul.' + (eng ? ' <b class="c-crew">Mühendis</b> olarak havalandırmaları kullanabilirsin: içeride en fazla ' + SS.C.ENGINEER_VENT_MAX + ' sn, sonra ' + SS.C.ENGINEER_VENT_COOLDOWN + ' sn bekleme.' : '') + (doc ? ' <b class="c-crew">Doktor</b> olarak yaşam belirtilerini her yerden görebilirsin (V): pil ' + SS.C.VITALS_BATTERY + ' sn, görevler pili şarj eder.' : '') + (det ? ' <b class="c-crew">Dedektif</b> olarak ceset rapor edildikten sonra temas ettiğin kişiyi sorgulayabilirsin (I): cinayet anında nerede olduğunu öğrenirsin. Dava başına ' + SS.C.INTERROGATIONS + ' sorgu.' : '') + (trk ? ' <b class="c-crew">İz Sürücü</b> olarak yakınındakine iz cihazı takabilirsin (T): konumu ' + SS.C.TRACK_DURATION + ' sn boyunca haritada görünür.' : '') + (jdg ? ' <b class="c-crew">Yargıç</b> olarak toplantıda bir kez birini atabilirsin: hainse yalnızca o gider, değilse ikiniz de elenirsiniz.' : '') + (ang ? (p.sub ? ' Öldüğünde ayrıca' : ' Hayattayken sıradan mürettebatsın. Öldüğünde') + ' <b class="c-crew">Koruyucu Melek</b> olursun: yaşayanlara kalkan verip (P) onları saldırılardan korursun.' : '') + (inf ? (p.sub ? ' Öldüğünde ayrıca' : ' Hayattayken sıradan mürettebatsın. Öldüğünde') + ' <b class="c-crew">Influencer</b> olursun: yaşayan birini takip edip (O) ona en fazla ' + SS.C.INFLUENCE_MAX_ICONS + ' resimlik ipuçları gönderirsin.' : '')
+        : 'Karakterin: <b style="color:' + p.def.color + '">' + esc(p.name) + '</b>. ' + (mates.length > 1 ? 'Takım arkadaşların' : 'Takım arkadaşın') + ': <b class="c-imp">' + mates.map(c => esc(c.name)).join(', ') + '</b>. Fark edilmeden mürettebatı devre dışı bırak.' + (p.sub === 'phantom' ? ' <b class="c-imp">Fantom</b> olarak ' + SS.C.VANISH_DURATION + ' sn görünmez olabilirsin (G). Görünmezken saldıramazsın; kaybolurken görülme!' : '') + (p.sub === 'shapeshifter' ? ' <b class="c-imp">Şekil Değiştirici</b> olarak yaşayan birinin kılığına ' + SS.C.SHIFT_DURATION + ' sn girebilirsin (H). Kılıktayken saldırırsan suç onun üstüne kalır; dönerken görülme!' : '');
       const c = $('revealArt'), g = c.getContext('2d');
       g.clearRect(0, 0, c.width, c.height);
       const show = p.role === 'crew' ? m.chars.filter(o => o !== p).slice(0, 4) : mates;
@@ -153,6 +208,12 @@
         const info = document.createElement('div');
         let sub = c.alive ? (c === p ? 'Sen' : '') : (c.ejected ? 'Elendi' : 'Devre dışı');
         if (c.id === mt.callerId) sub = mt.type === 'report' ? 'Rapor etti' : 'Toplantıyı çağırdı';
+        // Dedektif: kartta son sorgu cevabı ve şüpheli işareti (yalnızca oyuncu görür)
+        if (p.sub === 'detective' && c !== p) {
+          const cs = m.cases.slice().reverse().find(x => (x.asked[p.id] || {})[c.id] !== undefined);
+          if (cs) { const a = cs.asked[p.id][c.id]; sub = (sub ? sub + ' · ' : '') + 'Sorgu: ' + (a === null ? '?' : SS.Game.answerLabel(a)) + (a === cs.room ? ' ⚠' : ''); }
+          if (m.activeCase && m.activeCase.suspects[c.id]) sub = (sub ? sub + ' · ' : '') + '★ Şüpheli';
+        }
         const mate = p.role === 'impostor' && c.role === 'impostor' && c !== p;
         info.innerHTML = '<div class="nm" style="color:' + c.def.color + '">' + esc(c.name) + '</div><div class="sub">' + esc(sub) + '</div>' + (mate ? '<div class="mate">HAİN</div>' : '') + '<div class="chips"></div>';
         card.appendChild(cv); card.appendChild(info);
@@ -183,6 +244,12 @@
       const G = SS.Game, m = G.match, p = G.player(), mt = m && m.meeting;
       if (!mt || !p.alive) return;
       const c = m.chars[id];
+      if (S.pick === 'judge' && (G.state === 'MEETING_DISCUSSION' || G.state === 'MEETING_VOTE')) {
+        if (!c.alive || c === p) return;
+        SS.Audio.click();
+        S.judgeSel = id;
+        return;
+      }
       if (G.state === 'MEETING_DISCUSSION' && S.pick) {
         if (!c.alive || c === p) return;
         SS.Audio.click();
@@ -204,19 +271,20 @@
       m.chars.forEach(c => {
         const card = S.cards[c.id];
         if (!card) return;
-        const pickable = c.alive && c !== p && p.alive && ((st === 'MEETING_DISCUSSION' && S.pick) || (st === 'MEETING_VOTE' && !mt.votes.hasOwnProperty(p.id)));
+        const pickable = c.alive && c !== p && p.alive && ((st === 'MEETING_DISCUSSION' && S.pick) || S.pick === 'judge' || (st === 'MEETING_VOTE' && !mt.votes.hasOwnProperty(p.id)));
+        if (!c.alive && !card._deadSub) { card._deadSub = true; const sb = card.querySelector('.sub'); if (sb) sb.textContent = c.judged ? 'Yargılandı' : c.ejected ? 'Elendi' : 'Devre dışı'; }
         const voted = st === 'MEETING_VOTE' && mt.votes.hasOwnProperty(c.id);
-        const key = c.id + ':' + pickable + voted + (S.selected === c.id) + c.alive;
+        const key = c.id + ':' + pickable + voted + (S.selected === c.id) + (S.judgeSel === c.id) + c.alive;
         if (card._k === key) return;
         card._k = key;
         card.classList.toggle('pickable', !!pickable);
-        card.classList.toggle('selected', S.selected === c.id);
+        card.classList.toggle('selected', S.selected === c.id || S.judgeSel === c.id);
         card.classList.toggle('dead', !c.alive);
         let badge = card.querySelector('.voted');
         if (voted && !badge) { badge = document.createElement('span'); badge.className = 'voted'; badge.textContent = 'OY VERDİ'; card.appendChild(badge); }
         if (!voted && badge && st !== 'MEETING_RESULT') badge.remove();
       });
-      const sig = [st, S.pick, S.selected, JSON.stringify(mt.playerActs), mt.votes.hasOwnProperty(p.id) ? mt.votes[p.id] : '-', p.alive].join('|');
+      const sig = [st, S.pick, S.selected, S.judgeSel, p.judgeLeft, JSON.stringify(mt.playerActs), mt.votes.hasOwnProperty(p.id) ? mt.votes[p.id] : '-', p.alive].join('|');
       if (S.cache.act === sig) return;
       S.cache.act = sig;
       const A = S.el.actions;
@@ -230,6 +298,17 @@
         return b;
       };
       const note = txt => { const n = document.createElement('div'); n.className = 'note'; n.textContent = txt; A.appendChild(n); };
+      // Yargıç: seçim ve onay adımı (tartışma ve oylama sırasında)
+      if (S.pick === 'judge' && p.alive && st !== 'MEETING_RESULT') {
+        if (S.judgeSel !== null && S.judgeSel !== undefined) {
+          const t = m.chars[S.judgeSel];
+          note(t.name + ' hainse yalnızca o elenir. Hain değilse ikiniz de elenirsiniz. Emin misin?');
+          btn('Eminim, ' + t.name + ' atılsın', () => { SS.Meeting.playerJudge(t.id); S.pick = null; S.judgeSel = null; }, 'danger');
+        } else note('Yargılamak istediğin karakteri seç.');
+        btn('İptal', () => { S.pick = null; S.judgeSel = null; });
+        return;
+      }
+      const canJudge = p.sub === 'judge' && p.alive && p.judgeLeft > 0;
       if (st === 'MEETING_DISCUSSION') {
         if (!p.alive) { note('Hayaletler konuşamaz ve oy kullanamaz.'); btn('Oylamaya geç ▶', () => SS.Meeting.skipDiscussion(), 'primary'); return; }
         if (S.pick) {
@@ -241,7 +320,10 @@
         btn('Bir karakteri suçla', () => { if (!acts.accuse) S.pick = 'accuse'; }, '', acts.accuse);
         btn('Bir karakteri savun', () => { if (!acts.defend) S.pick = 'defend'; }, '', acts.defend);
         btn('Bulunduğum odayı söyle', () => SS.Meeting.playerSay('room'), '', acts.room);
+        if (m.engineers) btn('Mühendis olduğumu söyle', () => SS.Meeting.playerSay('claim'), '', acts.claim);
+        if (p.sub === 'detective' && m.cases.some(cs => Object.keys(cs.asked[p.id] || {}).length)) btn('Sorgu sonuçlarını söyle', () => SS.Meeting.playerSay('findings'), '', acts.findings);
         btn('Yeterli kanıt yok', () => SS.Meeting.playerSay('noevidence'), '', acts.noevidence);
+        if (canJudge) btn('⚖ Yargıla', () => { S.pick = 'judge'; S.judgeSel = null; }, 'danger');
         btn('Oylamaya geç ▶', () => SS.Meeting.skipDiscussion(), 'primary');
       } else if (st === 'MEETING_VOTE') {
         if (!p.alive) { note('Hayaletler oy kullanamaz. Oylama sürüyor…'); return; }
@@ -253,6 +335,7 @@
         note(S.selected !== null ? m.chars[S.selected].name + ' seçildi. Onaylıyor musun?' : 'Oy vermek için bir karaktere dokun ya da pas geç.');
         if (S.selected !== null) btn('Oy ver: ' + m.chars[S.selected].name, () => { SS.Meeting.castVote(p.id, S.selected); S.selected = null; }, 'primary');
         btn('Pas geç', () => { SS.Meeting.castVote(p.id, 'skip'); S.selected = null; });
+        if (canJudge) btn('⚖ Yargıla', () => { S.pick = 'judge'; S.judgeSel = null; S.selected = null; }, 'danger');
       } else {
         note(S.resultText(m, mt).title);
       }
@@ -272,6 +355,7 @@
 
     showTally(mt) {
       const m = SS.Game.match;
+      if (mt.judged) return; // yargı sonrası oy dağılımı yok, doğrudan atılma ekranı
       Object.keys(S.cards).forEach(id => {
         const card = S.cards[id];
         const b = card.querySelector('.voted'); if (b) b.remove();
@@ -291,21 +375,39 @@
       S.ejectStart = performance.now();
     },
 
+    // Atılma sırası: oylamada tek atılma; yargıda önce hedef, hedef masumsa ardından yargıç.
+    ejectSegments(m, mt) {
+      if (mt.judged) {
+        const j = m.chars[mt.judged.judgeId], t = m.chars[mt.judged.targetId];
+        const left = m.chars.filter(x => x.alive && x.role === 'impostor').length;
+        const segs = [{ id: t.id, title: 'Yargıç ' + j.name + ' kararını verdi: ' + t.name + ' uzaya atıldı.',
+          sub: mt.judged.guilty ? t.name + ' bir HAİNDİ. Kalan hain: ' + left : t.name + ' hain değildi.' }];
+        if (!mt.judged.guilty) segs.push({ id: j.id, title: 'Yanlış karar! Yargıç ' + j.name + ' uzaya atıldı.', sub: j.name + ' hain değildi. Kalan hain: ' + left });
+        return { segs, dur: SS.C.JUDGE_EJECT_SEG, start: 0 };
+      }
+      const res = S.resultText(m, mt);
+      return { segs: [{ id: mt.tally ? mt.tally.ejected : null, title: res.title, sub: res.sub }], dur: SS.C.RESULT_TIME - EJECT_AT, start: EJECT_AT };
+    },
+
     drawEject(m, mt, dt, run) {
       const c = S.ejectCanvas, g = c.getContext('2d');
       const w = window.innerWidth, h = window.innerHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
       if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.fillStyle = '#04050f'; g.fillRect(0, 0, w, h);
-      const k = U.clamp((mt.resultT - EJECT_AT) / (SS.C.RESULT_TIME - EJECT_AT), 0, 1);
+      const E = S.ejectSegments(m, mt);
+      const tt = Math.max(0, mt.resultT - E.start);
+      const si = Math.min(E.segs.length - 1, Math.floor(tt / E.dur));
+      const seg = E.segs[si];
+      const k = U.clamp((tt - si * E.dur) / E.dur, 0, 1);
       S.starsE.forEach(s => {
         if (run) { s.x -= s.z * dt * 0.25; if (s.x < 0) { s.x = 1; s.y = Math.random(); } }
         g.fillStyle = 'rgba(200,210,255,' + s.z + ')';
         g.fillRect(s.x * w, s.y * h, s.z * 3, s.z * 2);
       });
-      const res = S.resultText(m, mt);
-      if (mt.tally && mt.tally.ejected !== null) {
-        const ej = m.chars[mt.tally.ejected];
+      const res = seg;
+      if (seg.id !== null && seg.id !== undefined) {
+        const ej = m.chars[seg.id];
         g.save();
         g.translate(-80 + k * (w + 160), h * 0.42);
         g.rotate(k * Math.PI * 3);
@@ -334,7 +436,7 @@
         SS.Sprites.avatar(cv, c.def, { dead: !c.alive && !c.ejected });
         d.appendChild(cv);
         const info = document.createElement('div');
-        info.innerHTML = '<b style="color:' + c.def.color + '">' + esc(c.name) + (c.isPlayer ? ' (Sen)' : '') + '</b><span>' + (c.role === 'impostor' ? 'Hain' : 'Mürettebat') + '</span><em>' + (c.alive ? 'Hayatta' : c.ejected ? 'Elendi' : 'Devre dışı') + '</em>';
+        info.innerHTML = '<b style="color:' + c.def.color + '">' + esc(c.name) + (c.isPlayer ? ' (Sen)' : '') + '</b><span>' + (c.role === 'impostor' ? (c.sub === 'phantom' ? 'Fantom' : c.sub === 'shapeshifter' ? 'Şekil Değiştirici' : 'Hain') : (c.sub === 'engineer' ? 'Mühendis' : c.sub === 'doctor' ? 'Doktor' : c.sub === 'detective' ? 'Dedektif' : c.sub === 'tracker' ? 'İz Sürücü' : c.sub === 'judge' ? 'Yargıç' : c.angel ? 'Koruyucu Melek' : c.influencer ? 'Influencer' : 'Mürettebat') + (c.angel && c.sub ? ' · Melek' : '') + (c.influencer && c.sub ? ' · Influencer' : '')) + '</span><em>' + (c.alive ? 'Hayatta' : c.judged ? 'Yargılandı' : c.ejected ? 'Elendi' : 'Devre dışı') + '</em>';
         d.appendChild(info);
         box.appendChild(d);
       });

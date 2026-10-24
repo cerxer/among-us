@@ -115,6 +115,30 @@
         case 'KeyF':
           if (st === 'PLAYING') hud.togglePanel('sab');
           return;
+        case 'KeyH':
+          if (st === 'PLAYING') { const p = G.player(); if (p && p.disguise !== null) { if (!hud.panel) G.playerShift(); } else hud.togglePanel('shift'); }
+          return;
+        case 'KeyG':
+          if (st === 'PLAYING' && !hud.panel) G.playerVanish();
+          return;
+        case 'KeyP':
+          if (st === 'PLAYING' && !hud.panel) G.playerProtect();
+          return;
+        case 'KeyO':
+          if (st === 'PLAYING' && !hud.panel) G.playerInflToggle();
+          return;
+        case 'KeyT':
+          if (st === 'PLAYING' && !hud.panel) G.playerTrack();
+          return;
+        case 'KeyI':
+          if (st === 'PLAYING' && !hud.panel) G.playerInterrogate();
+          return;
+        case 'KeyN':
+          if (st === 'PLAYING') hud.togglePanel('case');
+          return;
+        case 'KeyV':
+          if (st === 'PLAYING') hud.togglePanel('vitals');
+          return;
         case 'Tab':
         case 'KeyM':
           if (st === 'PLAYING') hud.togglePanel('map');

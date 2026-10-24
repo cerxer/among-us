@@ -20,6 +20,7 @@
       SS.events.on('vote', e => { if (e.voterId === 0) A.blip(700, 0.06); else A.blip(380, 0.03, 0.05); });
       SS.events.on('meetingMessage', () => A.blip(900, 0.03, 0.05));
       SS.events.on('meetingResult', () => A.whoosh());
+      SS.events.on('judge', () => { A.tone(196, 0.3, 'square', 0.14); A.tone(147, 0.45, 'square', 0.14, 0.25); });
       SS.events.on('gameOver', e => {
         const p = SS.Game.player();
         const win = (e.winner === 'crew') === (p.role === 'crew');
@@ -27,6 +28,7 @@
       });
       SS.events.on('kill', e => { if (SS.Game.canSee(SS.Game.player(), e.victim.x, e.victim.y)) A.bonk(); });
       SS.events.on('vent', e => { if (e.c.isPlayer || SS.Game.canSee(SS.Game.player(), e.vent.x, e.vent.y)) A.vent(); });
+      SS.events.on('influence', e => { if (e.target.isPlayer) { A.blip(1046, 0.08); A.tone(1318, 0.1, 'triangle', 0.12, 0.09); } });
       SS.events.on('denied', () => A.blip(180, 0.07));
     },
 

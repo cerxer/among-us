@@ -20,8 +20,9 @@
         goal: null, path: null, pathIdx: 0, pathPending: false, pathToken: 0, needRepath: false,
         stuckT: 0, lastX: c.x, lastY: c.y, repaths: 0,
         taskIdx: -1, station: null, target: null, body: null, fixKey: null, vent: null,
-        huntT: 0, checkT: 0, repathT: 0, patience: U.range(5, 13), ventHops: 0, ventT: 0, ventTries: 0,
+        huntT: 0, checkT: 0, repathT: 0, patience: U.range(SS.C.IMP_PATIENCE[0], SS.C.IMP_PATIENCE[1]), ventHops: 0, ventT: 0, ventTries: 0,
         wantButton: false, reactT: 0, ghostT: 0,
+        vitalsT: U.range(15, 30), vAlive: {}, knownDead: new Set(),
         seen: [], events: [], lastSeen: {}, roomLog: [], susp: {}, knownBodies: new Set(),
       };
     },
@@ -33,7 +34,7 @@
       for (const c of m.chars) {
         if (!c.brain) continue;
         if (!SS.Game.worldActive() || m.over) return;
-        if (!c.alive) { B.ghostWork(m, c, dt); continue; }
+        if (!c.alive) { B.ghostWork(m, c, dt); if (c.angel) B.angelWork(m, c, dt); if (c.influencer) B.influencerWork(m, c, dt); continue; }
         B.updateBot(m, c, dt);
       }
     },
@@ -55,6 +56,16 @@
       b.perceiveT -= dt;
       if (b.perceiveT <= 0) { b.perceiveT = 0.25; B.perceive(m, c); }
       if (c.inVent !== null) { B.ventLogic(m, c, dt); return; }
+      if (c.sub === 'phantom' && c.invis && !c.fading && SS.C.VANISH_DURATION - c.invisLeft > 3 && !B.wouldBeSeen(m, c)) SS.Game.appear(c);
+      if (c.sub === 'shapeshifter' && c.disguise !== null && c.shiftAnim <= 0 && c.brain.mode !== 'hunt' && SS.C.SHIFT_DURATION - c.shiftLeft > 8 && !B.wouldBeSeen(m, c)) SS.Game.unshift(c);
+      if (c.sub === 'doctor' && ['report', 'reportDelay', 'fix', 'fixing', 'button', 'vitals'].indexOf(b.mode) < 0) {
+        b.vitalsT -= dt;
+        if (b.vitalsT <= 0) {
+          b.vitalsT = U.range(25, 45);
+          if (SS.Game.openVitals(c)) { B.setIdle(c); b.mode = 'vitals'; b.waitT = U.range(1.5, 2.5); }
+        }
+      }
+      if (c.sub === 'tracker' && !c.track && c.trackCd <= 0) B.maybeTrack(m, c);
       b.thinkT -= dt;
       if (b.thinkT <= 0) {
         b.thinkT = 0.5;
@@ -74,13 +85,16 @@
         if (b.roomLog.length > 90) b.roomLog.shift();
       }
       for (const o of m.chars) {
-        if (o === c || !o.alive || o.inVent !== null) continue;
+        if (o === c || !o.alive || o.inVent !== null || SS.Game.hiddenFrom(c, o)) continue;
         if (!SS.Vision.sees(c, o.x, o.y, R)) continue;
+        // Kılık değiştirmiş biri, kılığındaki kişi olarak kaydedilir (bot gerçeği bilemez).
+        const vid = SS.Game.displayOf(o).id;
+        if (vid === c.id) continue;
         const room = SS.Map.roomIndexAt(o.x, o.y);
-        const ls = b.lastSeen[o.id];
-        b.lastSeen[o.id] = { t: m.time, room };
+        const ls = b.lastSeen[vid];
+        b.lastSeen[vid] = { t: m.time, room };
         if (!ls || ls.room !== room || m.time - ls.t > 4) {
-          b.seen.push({ t: m.time, id: o.id, room, withMe: room === myRoom });
+          b.seen.push({ t: m.time, id: vid, room, withMe: room === myRoom });
           if (b.seen.length > 260) b.seen.shift();
         }
       }
@@ -89,11 +103,13 @@
         if (body.reported || b.knownBodies.has(body.id)) continue;
         if (!SS.Vision.sees(c, body.x, body.y, R)) continue;
         b.knownBodies.add(body.id);
+        b.knownDead.add(body.victimId);
         b.events.push({ type: 'body', t: m.time, room: body.room, victim: body.victimId, bodyId: body.id });
         const nearIds = new Set();
         for (const o of m.chars) {
-          if (o === c || !o.alive || o.inVent !== null) continue;
-          if (U.dist(o.x, o.y, body.x, body.y) < 200 && SS.Vision.sees(c, o.x, o.y, R)) { addSusp(b, o.id, 20); nearIds.add(o.id); }
+          if (o === c || !o.alive || o.inVent !== null || SS.Game.hiddenFrom(c, o)) continue;
+          const vid = SS.Game.displayOf(o).id;
+          if (vid !== c.id && U.dist(o.x, o.y, body.x, body.y) < 200 && SS.Vision.sees(c, o.x, o.y, R)) { addSusp(b, vid, 20); nearIds.add(vid); }
         }
         const recent = new Set();
         for (const s of b.seen) if (s.room === body.room && body.room >= 0 && m.time - s.t < 25 && s.id !== c.id) recent.add(s.id);
@@ -112,7 +128,8 @@
       for (const o of m.chars) {
         if (o === imp || o === target || !o.alive || o.inVent !== null || o.role === 'impostor') continue;
         const R = SS.Game.visionRadius(o);
-        if (SS.Vision.sees(o, imp.x, imp.y, R) || (target && SS.Vision.sees(o, target.x, target.y, R))) n++;
+        const seesImp = !SS.Game.hiddenFrom(o, imp) && SS.Vision.sees(o, imp.x, imp.y, R);
+        if (seesImp || (target && SS.Vision.sees(o, target.x, target.y, R))) n++;
       }
       return n;
     },
@@ -122,9 +139,11 @@
       for (const c of m.chars) {
         if (!c.brain || !c.alive || c === k || c === v || c.inVent !== null || c.role !== 'crew') continue;
         const R = SS.Game.visionRadius(c);
-        if (SS.Vision.sees(c, k.x, k.y, R)) {
-          c.brain.events.push({ type: 'kill', t: m.time, room: SS.Map.roomIndexAt(v.x, v.y), who: k.id, victim: v.id });
-          c.brain.susp[k.id] = Math.max(c.brain.susp[k.id] || 0, 100);
+        const kid = SS.Game.displayOf(k).id; // kılıktaki hain, kılığındaki kişiyi suçlu gösterir
+        if (kid !== c.id && SS.Vision.sees(c, k.x, k.y, R)) {
+          c.brain.events.push({ type: 'kill', t: m.time, room: SS.Map.roomIndexAt(v.x, v.y), who: kid, victim: v.id });
+          c.brain.susp[kid] = Math.max(c.brain.susp[kid] || 0, 100);
+          c.brain.knownDead.add(v.id);
         }
       }
     },
@@ -133,9 +152,12 @@
       for (const o of m.chars) {
         if (!o.brain || !o.alive || o === c || o.inVent !== null || o.role !== 'crew') continue;
         if (!SS.Vision.sees(o, c.x, c.y, SS.Game.visionRadius(o))) continue;
-        o.brain.events.push({ type: 'vent', t: m.time, room: SS.Map.roomIndexAt(vent.x, vent.y), who: c.id, kind });
-        o.brain.susp[c.id] = Math.max(o.brain.susp[c.id] || 0, 90);
-        if (!o.emergencyUsed) o.brain.wantButton = true;
+        const vid = SS.Game.displayOf(c).id;
+        if (vid === o.id) continue;
+        o.brain.events.push({ type: 'vent', t: m.time, room: SS.Map.roomIndexAt(vent.x, vent.y), who: vid, kind });
+        // Mühendis varken havalandırma kullanmak tek başına kesin kanıt değildir.
+        o.brain.susp[vid] = Math.max(o.brain.susp[vid] || 0, m.engineers ? 55 : 90);
+        if (!o.emergencyUsed && (!m.engineers || U.chance(0.35))) o.brain.wantButton = true;
       }
     },
 
@@ -250,14 +272,285 @@
         }
         if (c.emergencyUsed) b.wantButton = false;
       }
+      if (b.mode === 'idle' && c.sub === 'detective' && B.planInterrogation(m, c)) return;
       if (b.mode === 'idle') {
         const i = B.nearestUndoneTask(c);
         if (i >= 0) {
-          b.mode = 'task'; b.taskIdx = i;
           const st = M.stations[c.tasks[i].station];
+          const sc = c.sub === 'engineer' && c.ventUseCd <= 0 && U.chance(0.85) ? B.ventShortcut(c, st.bx, st.by) : null;
+          if (sc) {
+            b.mode = 'toVent'; b.vent = sc.from; b.ventTarget = sc.to;
+            B.goTo(c, sc.from.x, sc.from.y);
+            return;
+          }
+          b.mode = 'task'; b.taskIdx = i;
           B.goTo(c, st.bx, st.by);
         } else B.wander(c);
       }
+    },
+
+    // Kaybolma/belirme animasyonunu gören mürettebat botu neredeyse kesin kanıt kaydeder (bunu yalnızca hain yapabilir).
+    // Dönüşümü gören bot gerçek kimliği öğrenir ve kılığına girilen kişiyi aklar.
+    // Engellenen saldırıya tanık olan bot, saldırganı (görünen kimliğiyle) kesin şüpheli sayar.
+    onBlockedKill(m, k, v) {
+      for (const c of m.chars) {
+        if (!c.brain || !c.alive || c === k || c.inVent !== null || c.role !== 'crew') continue;
+        const kid = SS.Game.displayOf(k).id;
+        if (kid === c.id || !SS.Vision.sees(c, k.x, k.y, SS.Game.visionRadius(c))) continue;
+        c.brain.events.push({ type: 'attack', t: m.time, room: SS.Map.roomIndexAt(v.x, v.y), who: kid, victim: v.id });
+        c.brain.susp[kid] = Math.max(c.brain.susp[kid] || 0, 100);
+        if (!c.emergencyUsed) c.brain.wantButton = true;
+      }
+      // Kurban da saldıranı gördü.
+      if (v.brain && v.role === 'crew' && v.alive) {
+        const kid = SS.Game.displayOf(k).id;
+        v.brain.events.push({ type: 'attack', t: m.time, room: SS.Map.roomIndexAt(v.x, v.y), who: kid, victim: v.id });
+        v.brain.susp[kid] = Math.max(v.brain.susp[kid] || 0, 100);
+        if (!v.emergencyUsed) v.brain.wantButton = true;
+      }
+    },
+    // Influencer bot (hayalet): hainleri görür; bir mürettebatı takip edip ona en yakın haini resimlerle işaret eder.
+    // Yalnızca o an sunulan 6 resmi kullanabilir; uygun resim yoksa yeniler (yarım bekleme cezası).
+    influencerWork(m, c, dt) {
+      const b = c.brain, G = SS.Game, I = SS.INFLUENCE_ICONS;
+      b.inflT = (b.inflT || U.range(1, 3)) - dt;
+      if (b.inflT > 0) return;
+      b.inflT = U.range(1.5, 3.5);
+      const imps = m.chars.filter(o => o.alive && o.role === 'impostor');
+      if (!imps.length) return;
+      let t = c.inflFollow !== null ? m.chars[c.inflFollow] : null;
+      if (!t || !t.alive) {
+        const crew = m.chars.filter(o => o.alive && o.role === 'crew' && o.inVent === null);
+        if (!crew.length) return;
+        const p = G.player();
+        if (!m.autopilot && crew.indexOf(p) >= 0 && U.chance(0.35)) t = p;
+        else {
+          let bd = 1e9;
+          crew.forEach(o => imps.forEach(k => { const d = U.dist(o.x, o.y, k.x, k.y); if (d < bd) { bd = d; t = o; } }));
+        }
+        c.x = t.x; c.y = t.y; // hayalet duvardan geçer
+        if (!G.follow(c, t)) return;
+      }
+      if (c.inflCd > 0) return;
+      let k = null, kd = 1e9;
+      imps.forEach(o => { const d = U.dist(o.x, o.y, t.x, t.y); if (d < kd) { kd = d; k = o; } });
+      const ch = c.inflChoices, kr = SS.Map.roomIndexAt(k.x, k.y);
+      // Önce en yakın hainin rengi, yoksa başka bir yaşayan hainin rengi.
+      const kIcon = G.inflIconOf(k);
+      const colorK = ch.indexOf(kIcon) >= 0 ? kIcon : ch.find(i => imps.indexOf(G.inflCharOf(i)) >= 0);
+      const badI = ch.find(i => I[i].tone === 'bad');
+      const roomK = ch.find(i => I[i].type === 'room' && I[i].room === kr);
+      let msg = null;
+      if (colorK !== undefined) msg = [colorK].concat(badI !== undefined ? [badI] : [], roomK !== undefined ? [roomK] : []);
+      else if (roomK !== undefined && badI !== undefined) msg = [roomK, badI];
+      if (msg) { if (G.inflSend(c, msg) && U.chance(0.4)) G.unfollow(c, 'switch'); }
+      else G.inflRefresh(c);
+    },
+    // Mesajı alan bot resimleri yorumlar: renk + kötü işaret şüphe, renk + iyi işaret güven demektir.
+    onInfluence(m, from, t, icons) {
+      if (!t.brain || !t.alive || t.role !== 'crew') return;
+      const I = SS.INFLUENCE_ICONS, b = t.brain, its = icons.map(i => I[i]);
+      const bad = its.some(x => x.tone === 'bad'), good = its.some(x => x.tone === 'good');
+      const w = SS.C.INFLUENCE_TRUST;
+      icons.forEach(i => {
+        const o = SS.Game.inflCharOf(i);
+        if (!o || o === t || !o.alive) return;
+        const v = bad && !good ? w : good && !bad ? -w * 0.7 : bad && good ? 0 : w * 0.3;
+        if (!v) return;
+        addSusp(b, o.id, v);
+        b.events.push({ type: 'hint', t: m.time, who: o.id, bad: v > 0 });
+      });
+    },
+    // Melek bot (hayalet): görünmeden en az şüphelendiği yaşayan mürettebatın yanına geçip kalkan verir.
+    angelWork(m, c, dt) {
+      const b = c.brain;
+      if (c.protectCd > 0) return;
+      b.angelT = (b.angelT || U.range(1, 4)) - dt;
+      if (b.angelT > 0) return;
+      b.angelT = U.range(2, 6);
+      // Hayaletler hainleri görür: saldırısı hazır bir haine en yakın mürettebatı korur.
+      const imps = m.chars.filter(o => o.alive && o.role === 'impostor' && o.killCd < 6);
+      let t = null, bd = 700;
+      m.chars.forEach(o => {
+        if (!o.alive || o.role !== 'crew' || o.inVent !== null || o.shieldT > 0) return;
+        imps.forEach(k => { const d = U.dist(o.x, o.y, k.x, k.y); if (d < bd) { bd = d; t = o; } });
+      });
+      if (!t) t = U.pick(m.chars.filter(o => o.alive && o.role === 'crew' && o.inVent === null));
+      if (!t) return;
+      c.x = t.x; c.y = t.y; // hayalet duvardan geçer, görünmez
+      SS.Game.protect(c, t);
+    },
+
+    // Yargıç bot yalnızca neredeyse kesin kanıtı olan birini yargılar.
+    // Kalabalığın suçlaması yetmez: kendi gözüyle gördüğü bir cinayet, kaybolma veya dönüşüm gerekir.
+    judgeTarget(m, mt, c) {
+      const b = c.brain;
+      const hard = b.events.filter(e => (e.type === 'kill' || e.type === 'attack' || e.type === 'vanish' || e.type === 'shift' || (e.type === 'vent' && !m.engineers))
+        && m.chars[e.who].alive && m.chars[e.who] !== c && (b.susp[e.who] || 0) >= 90);
+      if (!hard.length) return null;
+      return m.chars[hard[hard.length - 1].who];
+    },
+    // Yargılananın rolü duyurulduğu için onu suçlamış olanlara olan güven buna göre değişir.
+    onJudge(m, mt, res) {
+      if (res.guilty) return;
+      const acc = (mt.accusers[res.target.id] || []).filter(a => a.w >= 15);
+      m.chars.forEach(o => {
+        if (!o.brain || !o.alive || o.role !== 'crew') return;
+        acc.forEach(a => { if (a.id !== o.id) addSusp(o.brain, a.id, 15); });
+      });
+    },
+
+    onShift(m, c, t, kind) {
+      for (const o of m.chars) {
+        if (!o.brain || !o.alive || o === c || o.inVent !== null || o.role !== 'crew') continue;
+        if (!SS.Vision.sees(o, c.x, c.y, SS.Game.visionRadius(o))) continue;
+        o.brain.events.push({ type: 'shift', t: m.time, room: SS.Map.roomIndexAt(c.x, c.y), who: c.id, other: t ? t.id : null, kind });
+        o.brain.susp[c.id] = Math.max(o.brain.susp[c.id] || 0, 95);
+        if (t && t !== o) {
+          // Kılıktan çıkışı gördüyse: o kılığa yazdığı yakın tarihli tanıklıklar aslında bu kişiye ait.
+          let moved = false;
+          if (kind === 'out') o.brain.events.forEach(e => {
+            if ((e.type === 'kill' || e.type === 'vent') && e.who === t.id && m.time - e.t <= SS.C.SHIFT_DURATION + 2) { e.who = c.id; moved = true; }
+          });
+          if (moved) o.brain.susp[t.id] = Math.min(o.brain.susp[t.id] || 0, 10);
+          else addSusp(o.brain, t.id, -30);
+        }
+        if (!o.emergencyUsed) o.brain.wantButton = true;
+      }
+    },
+
+    onVanish(m, c, kind) {
+      for (const o of m.chars) {
+        if (!o.brain || !o.alive || o === c || o.inVent !== null || o.role !== 'crew') continue;
+        if (!SS.Vision.sees(o, c.x, c.y, SS.Game.visionRadius(o))) continue;
+        o.brain.events.push({ type: 'vanish', t: m.time, room: SS.Map.roomIndexAt(c.x, c.y), who: c.id, kind });
+        o.brain.susp[c.id] = Math.max(o.brain.susp[c.id] || 0, 95);
+        if (!o.emergencyUsed) o.brain.wantButton = true;
+      }
+    },
+    // Görünür olsaydı kimse görür müydü? (fantom bot belirmek için bunu bekler)
+    wouldBeSeen(m, c) {
+      return m.chars.some(o => o !== c && o.alive && o.role === 'crew' && o.inVent === null && SS.Vision.sees(o, c.x, c.y, SS.Game.visionRadius(o)));
+    },
+
+    // İz sürücü bot: menzildeki en şüpheli kişiye cihaz takar (kovalamaz, görevini bırakmaz).
+    maybeTrack(m, c) {
+      const b = c.brain;
+      let best = null, bs = -1e9;
+      m.chars.forEach(o => {
+        if (o === c || !o.alive || o.inVent !== null) return;
+        if (U.dist(c.x, c.y, o.x, o.y) > SS.C.TRACK_RANGE || !SS.Vision.los(c.x, c.y, o.x, o.y)) return;
+        const s = (b.susp[o.id] || 0) + U.range(0, 10) - (b.tracked && b.tracked[o.id] ? 25 : 0);
+        if (s > bs) { bs = s; best = o; }
+      });
+      if (best && SS.Game.startTrack(c, best)) {
+        (b.tracked = b.tracked || {})[best.id] = true;
+        b.trackPrev = null;
+      }
+    },
+    // Gecikmeli konum, görülmüş gibi kayda geçer; bir örnekten diğerine yürünemeyecek sıçrama havalandırma demektir.
+    onTrackSample(m, c, t, tr) {
+      const b = c.brain;
+      if (tr.lost) return;
+      const ls = b.lastSeen[t.id];
+      if (!ls || ls.room !== tr.room || m.time - ls.t > 4) b.seen.push({ t: m.time, id: t.id, room: tr.room, withMe: false, tracked: true });
+      b.lastSeen[t.id] = { t: m.time, room: tr.room };
+      const prev = b.trackPrev && b.trackPrev.id === t.id ? b.trackPrev : null;
+      if (prev) {
+        const d = U.dist(prev.x, prev.y, tr.x, tr.y), walk = SS.C.SPEED * (m.time - prev.t) * 1.3 + 60;
+        if (d > walk) {
+          b.events.push({ type: 'vent', t: m.time, room: tr.room, who: t.id, kind: 'tracked' });
+          addSusp(b, t.id, m.engineers ? 45 : 75);
+          if (!c.emergencyUsed && U.chance(0.5)) b.wantButton = true;
+        }
+      }
+      b.trackPrev = { id: t.id, x: tr.x, y: tr.y, t: m.time };
+    },
+
+    // Dedektif bot: aktif davada henüz sorgulamadığı en yakın kişiye gider.
+    planInterrogation(m, c) {
+      const b = c.brain, cs = m.activeCase;
+      if (!cs || c.caseLeft <= 0 || c.intCd > 0) return false;
+      const asked = cs.asked[c.id] || {};
+      b.intSkip = b.intSkip && b.intSkip.caseId === cs.id ? b.intSkip : { caseId: cs.id, ids: {} };
+      let best = null, bd = 450; // yalnızca yakındakiler: dedektif görevlerini bırakmasın
+      m.chars.forEach(o => {
+        if (o === c || !o.alive || o.inVent !== null || asked[o.id] !== undefined || b.intSkip.ids[o.id]) return;
+        const d = U.dist(c.x, c.y, o.x, o.y);
+        if (d < bd) { bd = d; best = o; }
+      });
+      if (!best) return false;
+      B.setIdle(c);
+      b.mode = 'interro'; b.target = best; b.huntT = 6; b.repathT = 0;
+      return true;
+    },
+    actInterro(m, c, dt) {
+      const b = c.brain, G = SS.Game, C = SS.C, t = b.target;
+      b.huntT -= dt;
+      if (!t || !t.alive || t.inVent !== null || b.huntT <= 0 || !m.activeCase) {
+        if (t && b.intSkip) b.intSkip.ids[t.id] = true;
+        B.setIdle(c);
+        return;
+      }
+      const d = U.dist(c.x, c.y, t.x, t.y);
+      if (d <= C.INTERROGATE_RANGE - 6 && SS.Vision.los(c.x, c.y, t.x, t.y)) {
+        const res = G.interrogate(c, t);
+        if (res) B.learnInterrogation(m, c, res);
+        else if (b.intSkip) b.intSkip.ids[t.id] = true;
+        // Hakkı kaldıysa beklemeyi olduğu yerde geçirip sorguya devam eder.
+        B.wait(c, c.caseLeft > 0 ? c.intCd + U.range(0.2, 0.6) : U.range(0.3, 0.8));
+        return;
+      }
+      if (d < 200 && SS.Path.walkClear(c.x, c.y, t.x, t.y, C.RADIUS)) {
+        const step = C.SPEED * dt;
+        G.moveChar(c, ((t.x - c.x) / d) * Math.min(step, d - C.INTERROGATE_RANGE + 10), ((t.y - c.y) / d) * Math.min(step, d - C.INTERROGATE_RANGE + 10));
+        return;
+      }
+      b.repathT -= dt;
+      if (b.repathT <= 0) { b.repathT = 0.7; B.goTo(c, t.x, t.y); }
+      B.follow(m, c, dt);
+    },
+    // Sorgu cevabı şüpheyi günceller: cesedin odasında olan şüphelenilir, uzakta olanın mazereti doğrulanır.
+    learnInterrogation(m, c, res) {
+      const b = c.brain, cs = m.cases.find(x => x.id === res.caseId);
+      if (res.answer === null) return;
+      const atBody = res.atBody, inVent = res.answer === 'vent';
+      addSusp(b, res.target.id, atBody ? 60 : inVent ? 20 : -12);
+      b.events.push({ type: 'interro', t: m.time, who: res.target.id, answer: res.answer, atBody, victim: cs.victimId });
+      if (atBody && !c.emergencyUsed) b.wantButton = true; // güçlü bulgu: hemen toplantı çağır
+    },
+
+    // Doktor bot ekrandan durumları okur; cesedi bilinmeyen yeni bir ölüm zaman aralığıyla kaydedilir.
+    readVitals(m, c) {
+      const b = c.brain;
+      let fresh = 0;
+      SS.Game.vitals().forEach(v => {
+        if (v.id === c.id) return;
+        if (v.status === 'alive') { b.vAlive[v.id] = m.time; return; }
+        if (b.knownDead.has(v.id)) return;
+        b.knownDead.add(v.id);
+        if (v.status !== 'dead') return;
+        b.events.push({ type: 'vitals', t: m.time, victim: v.id, tFrom: b.vAlive[v.id] === undefined ? null : b.vAlive[v.id] });
+        fresh++;
+      });
+      if (fresh && !c.emergencyUsed && U.chance(0.3)) b.wantButton = true;
+      return fresh;
+    },
+
+    // Yakındaki bir havalandırmadan bağlı çıkışa geçmek yolu belirgin kısaltıyorsa planı döndür.
+    ventShortcut(c, gx, gy) {
+      const M = SS.Map, direct = U.dist(c.x, c.y, gx, gy);
+      let best = null, bestSave = 420;
+      M.vents.forEach(v => {
+        const dv = U.dist(c.x, c.y, v.x, v.y);
+        if (dv > 460) return;
+        v.links.forEach(id => {
+          const to = M.vents[id];
+          const save = direct - (dv + U.dist(to.x, to.y, gx, gy));
+          if (save > bestSave) { bestSave = save; best = { from: v, to: id }; }
+        });
+      });
+      return best;
     },
 
     // ---------------------------------------------------------------- karar: hain
@@ -277,9 +570,14 @@
     thinkImp(m, c) {
       const b = c.brain, M = SS.Map;
       if (b.mode === 'hunt' || b.mode === 'flee' || b.mode === 'toVent') return;
-      if (c.killCd <= 0) {
+      if (c.killCd <= 0 && !SS.Game.busyPhantom(c)) {
         b.patience -= 0.5;
         if (b.patience <= 0) {
+          if (c.sub === 'shapeshifter' && c.disguise === null && SS.Game.canShift(c).ok && !B.wouldBeSeen(m, c) && U.chance(0.8)) {
+            const cands = m.chars.filter(o => o !== c && o.alive && o.role === 'crew' && !SS.Vision.sees(c, o.x, o.y, SS.C.VISION_IMP));
+            const t = U.pick(cands.length ? cands : m.chars.filter(o => o !== c && o.alive && o.role === 'crew'));
+            if (t && SS.Game.shift(c, t)) { B.wait(c, SS.C.SHIFT_ANIM + 0.1); return; }
+          }
           const t = B.findKillTarget(m, c);
           if (t) {
             B.setIdle(c);
@@ -310,9 +608,19 @@
     },
 
     startFlee(m, c) {
+      if (c.sub === 'phantom' && SS.Game.canVanish(c).ok && U.chance(0.75) && SS.Game.vanish(c)) {
+        const b0 = c.brain, here0 = SS.Map.roomIndexAt(c.x, c.y);
+        B.setIdle(c);
+        b0.patience = U.range(SS.C.IMP_PATIENCE[0], SS.C.IMP_PATIENCE[1]);
+        const r0 = U.pick(SS.Map.rooms.filter(r => r.index !== here0));
+        b0.mode = 'flee';
+        const p0 = SS.Physics.findFreeSpot(r0.cx, r0.cy, SS.C.RADIUS);
+        B.goTo(c, p0.x, p0.y);
+        return;
+      }
       const b = c.brain, M = SS.Map;
       B.setIdle(c);
-      b.patience = U.range(5, 14);
+      b.patience = U.range(SS.C.IMP_PATIENCE[0], SS.C.IMP_PATIENCE[1]);
       const v = M.vents.slice().sort((a, z) => U.dist(c.x, c.y, a.x, a.y) - U.dist(c.x, c.y, z.x, z.y))[0];
       if (U.dist(c.x, c.y, v.x, v.y) < 400 && U.chance(0.55)) {
         b.mode = 'toVent'; b.vent = v; b.ventHops = U.int(0, 2);
@@ -333,6 +641,17 @@
       b.ventT -= dt;
       if (b.ventT > 0) return;
       const cur = SS.Map.vents[c.inVent];
+      if (c.role === 'crew') {
+        if (b.ventTarget !== null && b.ventTarget !== undefined && c.inVent !== b.ventTarget) {
+          SS.Game.moveVent(c, b.ventTarget);
+          b.ventTarget = null;
+          b.ventT = U.range(0.4, 0.9);
+          return;
+        }
+        SS.Game.exitVent(c);
+        B.setIdle(c);
+        return;
+      }
       if (b.ventHops > 0) {
         b.ventHops--;
         SS.Game.moveVent(c, U.pick(cur.links));
@@ -383,7 +702,7 @@
           r = B.follow(m, c, dt);
           if (r === 'arrived' || U.dist(c.x, c.y, st.x, st.y) < C.USE_RANGE - 10) {
             const tt = SS.TASK_TYPES[st.type].botTime;
-            b.mode = 'doing'; b.waitT = U.range(tt[0], tt[1]); c.busyT = b.waitT;
+            b.mode = 'doing'; b.waitT = U.range(tt[0], tt[1]) * SS.C.BOT_TASK_SCALE; c.busyT = b.waitT;
             c.facing = st.x >= c.x ? 1 : -1;
           } else if (r === 'nopath') B.wait(c, 1);
           break;
@@ -456,6 +775,11 @@
           }
           break;
         case 'hunt': B.actHunt(m, c, dt); break;
+        case 'interro': B.actInterro(m, c, dt); break;
+        case 'vitals':
+          b.waitT -= dt;
+          if (b.waitT <= 0 || !c.vitalsOpen) { B.readVitals(m, c); G.closeVitals(c); B.wait(c, 0.3); }
+          break;
         case 'flee':
           r = B.follow(m, c, dt);
           if (r === 'arrived' || r === 'nopath') B.wait(c, U.range(0.5, 2));
@@ -463,7 +787,8 @@
         case 'toVent': {
           const v = b.vent;
           if (U.dist(c.x, c.y, v.x, v.y) <= C.USE_RANGE) {
-            if (B.witnesses(m, c, null) === 0 && G.enterVent(c, v)) { b.ventT = U.range(1.2, 2.4); b.ventTries = 0; }
+            const hidden = c.role !== 'impostor' || B.witnesses(m, c, null) === 0;
+            if (hidden && G.enterVent(c, v)) { b.ventT = c.role === 'impostor' ? U.range(1.2, 2.4) : U.range(0.6, 1.2); b.ventTries = 0; }
             else B.setIdle(c);
             break;
           }
@@ -549,6 +874,8 @@
       let t = 1.4;
       speakers.forEach(c => {
         const st = c.role === 'crew' ? B.crewStatements(m, mt, c) : B.impStatements(m, mt, c);
+        const strong = c.id === mt.callerId || st.some(s => s.kind === 'accuse' || s.kind === 'defend');
+        if (!strong && U.chance(0.55)) return; // söyleyecek kanıtı olmayanların çoğu dinler
         st.slice(0, 2).forEach(s => { s.at = t; t += U.range(1.2, 2.0); out.push(s); });
       });
       const limit = SS.C.DISCUSS_TIME - 4;
@@ -566,14 +893,32 @@
       }
       const kills = b.events.filter(e => e.type === 'kill' && alive(e.who));
       const vents = b.events.filter(e => e.type === 'vent' && alive(e.who) && m.time - e.t < 150);
+      const vanishes = b.events.filter(e => e.type === 'vanish' && alive(e.who));
+      const shifts = b.events.filter(e => e.type === 'shift' && alive(e.who));
+      const attacks = b.events.filter(e => e.type === 'attack' && alive(e.who));
       if (kills.length) {
         const e = kills[kills.length - 1], k = ch(e.who), v = ch(e.victim);
         out.push(S('accuse', k.def.acc + ' ' + v.def.acc + ' devre dışı bırakırken gördüm! Hain o!', k.id, 70));
+      } else if (attacks.length) {
+        const e = attacks[attacks.length - 1], k = ch(e.who), v = ch(e.victim);
+        out.push(S('accuse', e.victim === c.id ? k.name + ' bana saldırdı ama bir kalkan beni korudu! Hain o!'
+          : k.def.acc + ' ' + loc(e.room) + ' saldırırken gördüm! ' + v.name + ' korunuyordu, kalkan saldırıyı durdurdu.', k.id, 70));
+      } else if (shifts.length) {
+        const e = shifts[shifts.length - 1], x = ch(e.who), y = e.other !== null ? ch(e.other) : null;
+        const txt = e.kind === 'in' ? x.def.acc + ' ' + loc(e.room) + ' kılık değiştirip ' + y.name + ' kılığına girerken gördüm! Hain o!'
+          : (y ? y.name + ' kılığındaki birinin ' + loc(e.room) + ' ' + x.name + ' olarak geri döndüğünü gördüm! Kılık değiştiren hain o!' : x.def.acc + ' kılık değiştirirken gördüm!');
+        out.push(S('accuse', txt, x.id, 70));
+      } else if (vanishes.length) {
+        const e = vanishes[vanishes.length - 1], x = ch(e.who);
+        out.push(S('accuse', e.kind === 'vanish' ? x.def.acc + ' ' + loc(e.room) + ' gözümün önünde görünmez olurken gördüm! Hain o!' : x.def.gen + ' ' + loc(e.room) + ' birden havadan belirdiğini gördüm! Görünmez olabiliyor, hain o!', x.id, 60));
       } else if (vents.length) {
         const e = vents[vents.length - 1], x = ch(e.who);
-        const txt = e.kind === 'exit' ? x.def.gen + ' havalandırmadan çıktığını gördüm!' : x.def.gen + ' havalandırmaya girdiğini gördüm.';
+        const txt = e.kind === 'tracked' ? x.def.acc + ' iz cihazıyla izliyordum: bir anda ' + loc(e.room) + ' belirdi, havalandırma kullandı!'
+          : e.kind === 'exit' ? x.def.gen + ' havalandırmadan çıktığını gördüm!' : x.def.gen + ' havalandırmaya girdiğini gördüm.';
         if (mt.callerId === c.id && mt.type === 'emergency') out.unshift(S('info', 'Acil toplantı çağırdım, bir şey gördüm.'));
-        out.push(S('accuse', txt, x.id, 55));
+        const st = S('accuse', txt, x.id, m.engineers ? 38 : 55);
+        st.topic = 'vent';
+        out.push(st);
       } else if (b.lastWith && alive(b.lastWith.withId)) {
         const v = ch(mt.victimId), x = ch(b.lastWith.withId);
         out.push(S('accuse', v.def.acc + ' en son ' + x.name + ' ile birlikte ' + loc(b.lastWith.room) + ' gördüm.', x.id, b.lastWith.n === 1 ? 24 : 14));
@@ -584,7 +929,32 @@
           out.push(S('accuse', x.def.acc + ' ' + loc(cand[0].room) + ' gördüm.', x.id, m.time - cand[0].t < 15 ? 22 : 15));
         }
       }
+      const hints = b.events.filter(e => e.type === 'hint' && !e.told && alive(e.who));
+      if (hints.length) {
+        const e = hints[hints.length - 1], x = ch(e.who);
+        if (e.bad && (b.susp[x.id] || 0) >= 50) out.push(S('accuse', 'Bir hayalet bana resimlerle ' + x.def.acc + ' işaret etti. Bence ' + x.name + ' hain!', x.id, 18));
+        else if (!e.bad) out.push(S('defend', 'Bir hayalet bana ' + x.def.gen + ' temiz olduğunu gösterdi.', x.id, 10));
+        hints.forEach(h => { h.told = true; });
+      }
       if (mt.callerId === c.id && mt.type === 'emergency' && !out.length) out.push(S('info', 'Acil toplantı çağırdım, konuşmamız lazım.'));
+      const intr = b.events.filter(e => e.type === 'interro' && !e.told && alive(e.who)).sort((a, z) => (z.atBody ? 1 : 0) - (a.atBody ? 1 : 0));
+      intr.slice(0, 2).forEach(e => {
+        const t = ch(e.who), v = ch(e.victim);
+        const where = e.answer === 'vent' ? 'havalandırmalardaydı' : loc(e.answer) + ' idi';
+        const st = S(e.atBody || e.answer === 'vent' ? 'accuse' : 'defend', 'Sorguladım: ' + t.name + ', ' + v.name + ' öldürüldüğünde ' + where + (e.atBody ? ', cesedin olduğu yerde!' : '.'), t.id, e.atBody ? 45 : e.answer === 'vent' ? 18 : 12);
+        st.topic = 'interro';
+        out.unshift(st);
+        e.told = true;
+      });
+      const vit = b.events.filter(e => e.type === 'vitals' && !e.told && e.victim !== mt.victimId);
+      if (vit.length) {
+        const e = vit[vit.length - 1], v = ch(e.victim);
+        const when = e.tFrom === null ? 'Ne zaman olduğunu bilmiyorum.' : 'Son ' + Math.max(1, Math.ceil(m.time - e.tFrom)) + ' saniye içinde olmuş.';
+        const head = mt.callerId === c.id && mt.type === 'emergency' ? 'Acil toplantı çağırdım: yaşam belirtilerinde ' + v.name + ' ölü görünüyor. ' : 'Yaşam belirtilerine baktım, ' + v.name + ' ölmüş! ';
+        for (let k = out.length - 1; k >= 0; k--) if (out[k].kind === 'info' && /^Acil toplantı/.test(out[k].text)) out.splice(k, 1);
+        out.unshift(S('info', head + when));
+        e.told = true;
+      }
       const accused = out.some(s => s.kind === 'accuse');
       if (!accused) {
         let top = null, tv = 44;
@@ -626,6 +996,12 @@
       if (!t || !a) return out;
       if (t.brain && t.alive && !mt.responded.has(t.id)) {
         mt.responded.add(t.id);
+        // Havalandırma suçlamasına mühendis rolünü açıklayarak (ya da hain olarak yalan söyleyerek) cevap ver.
+        const ventTalk = msg.topic === 'vent' && m.engineers > 0;
+        if (ventTalk && (t.sub === 'engineer' || (t.role === 'impostor' && U.chance(0.45)))) {
+          out.push({ speakerId: t.id, kind: 'defend', claim: 'engineer', targetId: t.id, weight: 30, text: 'Ben mühendisim, havalandırmayı kullanabiliyorum!', delay: U.range(0.8, 1.6) });
+          return out;
+        }
         if (t.role === 'crew') {
           const ar = B.alibiRoom(m, t);
           const counter = (t.brain.susp[a.id] || 0) >= 60;
@@ -662,6 +1038,12 @@
       if (msg.kind === 'accuse') mt.publicSusp[msg.targetId] = (mt.publicSusp[msg.targetId] || 0) + msg.weight;
       if (msg.kind === 'defend' && msg.targetId !== msg.speakerId) mt.publicSusp[msg.targetId] = (mt.publicSusp[msg.targetId] || 0) - msg.weight;
       if (msg.kind === 'accuse') (mt.accusers[msg.targetId] = mt.accusers[msg.targetId] || []).push({ id: msg.speakerId, w: msg.weight });
+      let conflict = null;
+      if (msg.claim === 'engineer') {
+        if (m.engClaims.indexOf(msg.speakerId) < 0) m.engClaims.push(msg.speakerId);
+        const liveClaims = m.engClaims.filter(id => m.chars[id].alive || m.chars[id].ejected === false);
+        if (liveClaims.length > m.engineers) conflict = liveClaims; // birden fazla iddia: biri yalan söylüyor
+      }
       m.chars.forEach(c => {
         if (!c.brain || !c.alive || c.id === msg.speakerId || c.role !== 'crew') return;
         const b = c.brain;
@@ -670,6 +1052,11 @@
           return;
         }
         const tr = B.trust(c, msg.speakerId);
+        if (msg.claim === 'engineer') {
+          if (conflict) conflict.forEach(id => { if (id !== c.id) addSusp(b, id, 30); });
+          else addSusp(b, msg.speakerId, -msg.weight * tr);
+          return;
+        }
         if (msg.kind === 'accuse') addSusp(b, msg.targetId, msg.weight * tr);
         else if (msg.kind === 'defend') addSusp(b, msg.targetId, -msg.weight * tr * (msg.targetId === msg.speakerId ? 0.5 : 1));
       });
@@ -715,10 +1102,11 @@
         if (!b) return;
         Object.keys(b.susp).forEach(k => { if (b.susp[k] < 90) b.susp[k] *= 0.7; });
         b.events.forEach(e => { e.told = true; });
+        m.chars.forEach(o => { if (!o.alive) b.knownDead.add(o.id); });
         b.fixKey = null;
         b.wantButton = false;
         b.body = null;
-        b.patience = U.range(4, 12);
+        b.patience = U.range(SS.C.IMP_PATIENCE[0], SS.C.IMP_PATIENCE[1]);
         if (c.alive) B.wait(c, U.range(0.3, 1.5));
       });
     },
